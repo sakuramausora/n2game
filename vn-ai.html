@@ -92,11 +92,8 @@
   #mbox.in { opacity:1; transform:translateY(0); }
   #who { display:block; font-size:12px; color:var(--gold); letter-spacing:1px;
     text-transform:uppercase; margin-bottom:4px; min-height:16px; }
-  #ja { font-size:23px; line-height:1.7; letter-spacing:.5px; min-height:76px; cursor:pointer; }
+  #ja { font-size:23px; line-height:1.7; letter-spacing:.5px; min-height:96px; cursor:pointer; }
   #ja .glos { color:var(--gold); }
-  #pl { font-size:15px; color:var(--dim); line-height:1.55; min-height:20px; margin-top:4px;
-    opacity:0; transition:opacity .5s ease; }
-  #pl.show { opacity:.96; }
   #bar { display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
   #chips { display:flex; gap:6px; flex-wrap:wrap; }
   .chip { background:rgba(244,185,66,.12); border:1px solid rgba(244,185,66,.35); color:var(--gold);
@@ -164,7 +161,6 @@
   <div id="mbox">
     <div id="who"></div>
     <div id="ja"></div>
-    <div id="pl"></div>
     <div id="bar">
       <div id="chips"></div>
       <button id="cspeak" title="読む">🔊</button>
@@ -284,8 +280,6 @@ function rawJa() { return plain(SCENES[story.s].para.ja); }
 
 function typeJa() {
   var el = document.getElementById('ja');
-  var pl = document.getElementById('pl');
-  pl.classList.remove('show'); pl.textContent = '';
   el.innerHTML = ''; doneTyping = false;
   document.getElementById('cnext').classList.remove('pulse');
   var text = rawJa();
@@ -300,8 +294,6 @@ function typeJa() {
 
 function finishLine() {
   doneTyping = true;
-  var pl = document.getElementById('pl');
-  if (SCENES[story.s].para.pl) { pl.textContent = SCENES[story.s].para.pl; pl.classList.add('show'); }
   chips();
   document.getElementById('cnext').classList.add('pulse');
 }
@@ -428,7 +420,7 @@ function showChoices() {
       applyChoice(i);
       if (ch.note) {
         var cur = SCENES[story.s];
-        SCENES.splice(story.s + 1, 0, { bg: cur.bg, who: cur.who, para: { ja: '', pl: ch.note, k: -1 } });
+        SCENES.splice(story.s + 1, 0, { bg: cur.bg, who: cur.who, para: { ja: ch.note, k: -1 } });
       }
       if (story.s + 1 < SCENES.length) { story.s++; skipped = false; showScene(); }
       else showEnding();
