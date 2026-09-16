@@ -985,15 +985,17 @@ return r.json().catch(function () { return null; }).then(function (j) {
     sel.onchange = function () { state.settings.storyGenre = sel.value; save(); };
     var bAI = el('button', 'btn pri', '🤖 Generuj historyjkę AI');
     var bNew2 = el('button', 'btn', '🎲 Inna grupa + AI');
+    var bVN = el('button', 'btn', '📼 Generuj VN AI');
     bAI.onclick = function () { aiStoryDraw(q('.story-out'), sel.value); };
     bNew2.onclick = function () { makeGroup('random'); aiStoryDraw(q('.story-out'), sel.value); };
-    top.append(sel, bAI, bNew2);
+    bVN.onclick = function () { aiVNDraw(q('.story-out'), sel.value); };
+    top.append(sel, bAI, bNew2, bVN);
     sec.appendChild(top);
     sec.appendChild(groupBar());
     var out = el('div', 'story-out');
     sec.appendChild(out);
     main.appendChild(sec);
-    out.appendChild(el('div', 'story-note dim', 'Wybierz rodzaj historyjki i kliknij „🤖 Generuj historyjkę AI”.'));
+    out.appendChild(el('div', 'story-note dim', 'Wybierz rodzaj historyjki i kliknij „🤖 Generuj historyjkę AI". „📼 Generuj VN AI" tworzy pełną powieść wizualną (rozdziały, wybór, 2 zakończenia).'));
   }
 
   // AI story: Gemini (browser, GitHub Pages OK) gdy klucz podany; w przeciwnym razie local opencode (serve.js).
@@ -1027,6 +1029,44 @@ return r.json().catch(function () { return null; }).then(function (j) {
       }
     }).catch(function () {
       aiError(out, null);
+    });
+  }
+
+  // AI visual novel: full script (chapters, choice, 2 endings) via Gemini.
+  function aiVNDraw(out, genre) {
+    out.innerHTML = '';
+    var items = currentItems();
+    if (!items.length) return aiError(out, null);
+    if (!window.fetch || !window.N2STORYLLM) return aiError(out, null);
+    var key = state.settings.geminiKey || '';
+    if (!key) { aiError(out, { error: 'VN AI wymaga klucza Gemini — wpisz go w polu „Klucz Gemini" powyżej.' }); return; }
+    genGeminiVN(out, items, genre, key);
+  }
+
+  function genGeminiVN(out, items, genre, key) {
+    out.appendChild(el('div', 'story-note', '📼 Generuję powieść wizualną ' + genreLabel(genre) + ' przez Gemini… to trwa zwykle 1–3 minuty, nie zamykaj okna.'));
+    var known = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+    var cfg = state.settings.geminiModel;
+    var models = known.indexOf(cfg) >= 0 ? [cfg].concat(known) : known;
+    models = models.filter(function (m, i) { return models.indexOf(m) === i; });
+    var clean = items.map(function (w) { return { w: w.w, r: w.r, pl: w.pl || '', m: w.m || '' }; });
+    var prompt = window.N2STORYLLM.buildVNPrompt(clean, genre);
+    callGemini(prompt, key, models).then(function (text) {
+      var script = window.N2STORYLLM.parseVN(text, clean);
+      if (!script) throw new Error('Model nie zwrócił poprawnego skryptu VN — spróbuj jeszcze raz lub zmień model.');
+      try { localStorage.setItem('n2.vn.ai', JSON.stringify(script)); }
+      catch (e) { throw new Error('Nie udało się zapisać powieści w localStorage.'); }
+      state.stats.stories++;
+      save();
+      var want = el('div', 'card');
+      want.appendChild(el('h3', '', '📼 ' + (script.titleJA || 'Powieść wizualna')));
+      want.appendChild(el('p', 'ex-item', '„' + (script.titlePL || '') + '" — ' + script.chapters.length + (script.chapters.length === 1 ? ' rozdział' : ' rozdziały/rozdziałów') + ', wybór, 2 zakończenia, ' + script.vocab.length + ' słówek. Gotowe do odtwarzania.'));
+      var bOpen = el('button', 'btn pri', '▶ Otwórz powieść wizualną');
+      bOpen.onclick = function () { window.open('vn-ai.html', '_blank'); };
+      want.appendChild(bOpen);
+      out.appendChild(want);
+    }).catch(function (e) {
+      aiError(out, { error: e && e.message || String(e) });
     });
   }
 

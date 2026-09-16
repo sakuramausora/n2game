@@ -175,5 +175,147 @@
     };
   }
 
-  return { buildPrompt: buildPrompt, parseStory: parseStory, extractJSON: extractJSON };
+  var VN_BG = { night: 0, rain: 1, station: 2, train: 3, hospital: 4, twilight: 5, river: 6 };
+
+  // Build the user prompt asking for a full visual-novel script (JSON).
+  function buildVNPrompt(items, genre) {
+    var lines = (items || []).map(function (it) {
+      var meaning = (it.pl && String(it.pl).trim()) || firstMeaningEN(it);
+      return 'WT: ' + it.w + '|' + (it.r || '') + '|' + meaning;
+    });
+    var key = GENRE_RULES[genre] ? genre : 'normal';
+    var label = GENRE_LABEL[key];
+    var rule = GENRE_RULES[key];
+    var surnames = sample(SURNAMES, 18);
+    var maleNames = sample(MALE_NAMES, 12);
+    var femaleNames = sample(FEMALE_NAMES, 12);
+    var bgList = ['night', 'rain', 'station', 'train', 'hospital', 'twilight', 'river'];
+    var t = [
+      'Jesteś scenarzystą powieści wizualnych po japońsku. Napisz pełną, dłuższą opowieść (aspekty gatunku bardzo ważne!), która wykorzysta DOKŁADNIE RAZ każde słówko z listy poniżej.',
+      '',
+      'GATUNEK: ' + label + ' — DO OBOWIĄZKOWEGO PRZESTRZEGANIA',
+      'Cała historia MUSI od pierwszego do ostatniego zdania realizować ten gatunek: ' + rule,
+      '',
+      'Konwencja powieści wizualnej (VN):',
+      '1. 3–5 ROZDZIAŁÓW (pole "chapters"). Każdy rozdział ma: "titleJA" (tytuł po japońsku z furiganą w "titleKana"), "titlePL", "bg" (miejsce akcji jako jedna z wartości: ' + bgList.join(', ') + '), "who" (głośny narrator/postacie prowadząca cały rozdział) oraz 4–8 zdań w "paras".',
+      '2. Każde zdanie w "paras" to obiekt: { "ja": "…zdanie po japońsku…", "pl": "…naturalne polskie tłumaczenie…" }. Możesz dodać żywą rozmowę między bohaterami.',
+      '3. POŁOWA_KROPLA: w 2. lub 3. rozdziale umieść wybór (pole "choice" na poziomie całego skryptu, "afterChapter": numer rozdziału, po którym wybór się pojawia). "choice.paras" to 1–2 zdania tuż przed pytaniem, a "options" to DOKŁADNIE dwie opcje: { "label": "…krótkie zdanie po japońsku…", "note": "…krótki polski komentarz…" }. Wybór prowadzi do dwóch różnych zakończeń.',
+      '4. W OSTATNIM rozdziale umieść dwa zakończenia (pole "endings", DOKŁADNIE 2 elementy): { "title": "…tytuł po japońsku…", "sub": "…podtytuł np. Epilog…", "body": "…opis zakończenia po polsku, 2–4 zdania…" }.',
+      '5. Jeśli ostatnia scena powinna się różnić w zależności od wyboru, danemu zdaniu w ostatnim rozdziale nadaj "variants": [ "…wersja przy opcji 1…", "…wersja przy opcji 2…" ] (zamiast "ja"; obie wersje po japońsku).',
+      '6. BOHATEROWIE: każda ważniejsza postać MUSI mieć imię i nazwisko (przy neutralnym tle — Japonia — losowo łącz nazwiska i imiona z pul; w obrębie jednej historii nazwiska nie mogą się powtarzać; jeśli akcja toczy się gdzie indziej, dobierz imiona stosowne do świata).',
+      '6a. PULA NAZWISK: ' + surnames + '. Imiona MĘSKIE: ' + maleNames + '. Imiona ŻEŃSKIE: ' + femaleNames + '.',
+      '',
+      'Zasady użycia słówek:',
+      '7. Każde słówko musi pojawić się w tekście japońskim DOKŁADNIE RAZ, w DOKŁĄDNIE takim zapisie jak na liście (np. 伝わる jako dokładnie „伝わる"), otoczone gwiazdkami ★słówko★ (np. „夜の闇に★伝わる★声"). Kontekst ma być naturalny, zgodny ze znaczeniem.',
+      '8. Łączna liczba znaczników ★…★ w całej historii MUSI być równa liczbie słówek z listy. Ani jednego nie pominąć, żadnego nie powtórzyć. Poza tymi znacznikami w tekście nie używaj gwiazdek.',
+      '9. W polu "vocab" wypisz słownik użytych słówek (każde DOKŁADNIE raz): { "w": "…słowo…", "r": "…hiragana/czytanie…", "m": "…znaczenie po angielsku…", "pl": "…znaczenie po polsku…" } — pole "vocab" musi zawierać identyczną liczbę elementów co lista wejściowa.',
+      '',
+      '10. Odpowiedz WYŁĄCZNIE poprawnym JSON-em (bez markdown, bez komentarzy, bez wstępu) w tym formacie:',
+      '',
+      '{',
+      '  "titleJA": "…tytuł po japońsku…",',
+      '  "titlePL": "…tytuł po polsku…",',
+      '  "genre": "' + key + '",',
+      '  "vocab": [ { "w": "…", "r": "…", "m": "…", "pl": "…" } ],',
+      '  "chapters": [',
+      '    { "titleJA": "…", "titlePL": "…", "titleKana": "…", "bg": "night", "who": "…",',
+      '      "paras": [ { "ja": "…zdanie po japońsku z ★słówkiem★…", "pl": "…tłumaczenie…" } ] }',
+      '  ],',
+      '  "choice": { "afterChapter": 2,',
+      '    "paras": [ { "ja": "…", "pl": "…" } ],',
+      '    "options": [ { "label": "…", "note": "…" }, { "label": "…", "note": "…" } ] },',
+      '  "endings": [ { "title": "…", "sub": "…", "body": "…" }, { "title": "…", "sub": "…", "body": "…" } ]',
+      '}',
+      '',
+      'PAMIĘTAJ: gatunek = ' + label + ', znaczniki ★…★ tylko dla słówek, wybór w środku, dwa różne zakończenia, 3–5 rozdziałów.',
+      '',
+      'Słówka do wykorzystania:',
+      ''
+    ].join('\n');
+    return t + lines.join('\n');
+  }
+
+  // Normalize an LLM VN response into the player script shape.
+  // Returns { title,titlePL,genre,vocab,chapters,choice,endings } or null.
+  function parseVN(text, items) {
+    var raw = extractJSON(text);
+    if (!raw) return null;
+    var obj = null;
+    try { obj = JSON.parse(raw); } catch (e) { return null; }
+    if (!obj || !Array.isArray(obj.chapters) || obj.chapters.length < 2) return null;
+    var genre = String(obj.genre || '').trim();
+    if (['normal', 'whump', 'horror', 'twist'].indexOf(genre) < 0) genre = '';
+    var chapters = [];
+    for (var ci = 0; ci < obj.chapters.length; ci++) {
+      var ch = obj.chapters[ci];
+      if (!ch || !Array.isArray(ch.paras) || !ch.paras.length) return null;
+      var batch = [];
+      for (var pi = 0; pi < ch.paras.length; pi++) {
+        var p = ch.paras[pi];
+        if (!p || !String(p.ja || '').trim()) {
+          if (p && Array.isArray(p.variants) && p.variants.length >= 2) {
+            batch.push({ ja: '', pl: String(p.pl || '').trim(), k: -1, word: null, variants: [String(p.variants[0]), String(p.variants[1])] });
+          }
+          continue;
+        }
+        var para = { ja: String(p.ja).trim(), pl: String(p.pl || '').trim(), k: -1, word: null };
+        if (Array.isArray(p.variants) && p.variants.length >= 2) para.variants = [String(p.variants[0]), String(p.variants[1])];
+        if (p.fx && ['shake', 'flash', 'flicker'].indexOf(p.fx) >= 0) para.fx = p.fx;
+        batch.push(para);
+      }
+      if (!batch.length) return null;
+      chapters.push({
+        titleJA: String(ch.titleJA || '').trim(),
+        titlePL: String(ch.titlePL || '').trim(),
+        kana: String(ch.titleKana || ch.kana || '').trim(),
+        who: String(ch.who || '').trim(),
+        bg: (ch.bg != null && VN_BG[ch.bg] != null) ? VN_BG[ch.bg] : (typeof ch.bg === 'number' && ch.bg >= 0 && ch.bg <= 6 ? ch.bg : 0),
+        paras: batch
+      });
+    }
+    var used = {};
+    chapters.forEach(function (ch) {
+      ch.paras.forEach(function (p) {
+        var m = String(p.ja).match(/★([^★]+)★/g) || [];
+        m.forEach(function (mark) { used[mark.slice(1, -1)] = 1; });
+      });
+    });
+    var vocabMap = {};
+    var vocab = [];
+    (obj.vocab || []).forEach(function (v, i) {
+      if (!v || !String(v.w || '').trim()) return;
+      var entry = { w: String(v.w).trim(), r: String(v.r || '').trim(), m: String(v.m || '').trim(), pl: String(v.pl || '').trim() };
+      if (!vocabMap[entry.w]) { vocab.push(entry); vocabMap[entry.w] = entry; }
+    });
+    (items || []).forEach(function (it, i) {
+      if (it && it.w && !vocabMap[it.w] && (used[it.w] || true)) {
+        var e = { w: it.w, r: it.r || '', m: it.m || '', pl: it.pl || '' };
+        vocab.push(e); vocabMap[e.w] = e;
+      }
+    });
+    var choice = null;
+    if (obj.choice && Array.isArray(obj.choice.options) && obj.choice.options.length >= 2) {
+      var cp = (obj.choice.paras || []).map(function (p) { return { ja: String(p.ja || '').trim(), pl: String(p.pl || '').trim() }; }).filter(function (p) { return p.ja; });
+      choice = {
+        afterChapter: (obj.choice.afterChapter != null ? Number(obj.choice.afterChapter) : 1),
+        paras: cp,
+        options: obj.choice.options.slice(0, 2).map(function (o) { return { label: String(o.label || '').trim(), note: String(o.note || '').trim() }; })
+      };
+    }
+    var endings = (obj.endings || []).slice(0, 2).map(function (e) {
+      return { title: String(e.title || '').trim(), sub: String(e.sub || '').trim(), body: String(e.body || '').trim() };
+    });
+    while (endings.length < 2) endings.push({ title: '…', sub: '…', body: '…' });
+    return {
+      titleJA: String(obj.titleJA || '').trim(),
+      titlePL: String(obj.titlePL || '').trim(),
+      genre: genre,
+      vocab: vocab,
+      chapters: chapters,
+      choice: choice,
+      endings: endings
+    };
+  }
+
+  return { buildPrompt: buildPrompt, parseStory: parseStory, extractJSON: extractJSON, buildVNPrompt: buildVNPrompt, parseVN: parseVN };
 });

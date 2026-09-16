@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NihongoN2 — powieść wizualna (AI)</title>
+<style>
+  :root {
+    --bg:#0e1018; --ink:#eceaf6; --dim:#a8a7bd; --accent:#e63946; --gold:#f4b942;
+    --panel:rgba(20,22,34,.94); --line:rgba(255,255,255,.09);
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; height:100%; overflow:hidden; }
+  body {
+    background:#0e1018; color:var(--ink);
+    font-family:"Segoe UI",-apple-system,"Yu Gothic UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  }
+  #stage { position:fixed; inset:0; z-index:0; background:#0e1018; transition:background 1.2s ease; }
+  #stage.fx-shake { animation:shake .45s cubic-bezier(.36,.07,.19,.97) both; }
+  #stage.fx-flicker { animation:flicker 1.1s steps(12) both; }
+  @keyframes shake {
+    10%,90% { transform:translate3d(-1px,0,0); }
+    20%,80% { transform:translate3d(2px,0,0); }
+    30%,50%,70% { transform:translate3d(-4px,0,0); }
+    40%,60% { transform:translate3d(4px,0,0); }
+  }
+  @keyframes flicker {
+    0%,19%,21%,23%,55%,57%,100% { opacity:1; filter:brightness(1); }
+    20%,22%,56% { opacity:.35; filter:brightness(2.2); }
+  }
+  #flash { position:fixed; inset:0; z-index:35; background:#fff; opacity:0; pointer-events:none; }
+  #flash.go { animation:flashpop .35s ease-out; }
+  @keyframes flashpop { 0% { opacity:0; } 8% { opacity:.85; } 100% { opacity:0; } }
+  .vignette { position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,.55) 100%); }
+  .grain { position:fixed; inset:0; z-index:2; pointer-events:none; opacity:.05;
+    background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.6) 0 1px,transparent 1px 3px); }
+
+  .bg { position:absolute; inset:0; overflow:hidden; opacity:0; transition:opacity 1.4s ease; }
+  .bg.on { opacity:1; }
+  .bg::after { content:""; position:absolute; inset:0; }
+  .night { background:linear-gradient(180deg,#0a0d1d 0%,#101730 40%,#1a2340 70%,#0c1020 100%); }
+  .rain { background:linear-gradient(180deg,#05070d 0%,#0a1120 55%,#0d1730 100%); }
+  .rain::after { animation:rain .5s linear infinite;
+    background-image:repeating-linear-gradient(95deg, transparent 0 26px, rgba(180,210,255,.20) 26px 29px, transparent 29px 60px);
+    background-size:60px 8px; }
+  .station { background:linear-gradient(180deg,#0d0f18 0%,#141a2c 50%,#0b0d16 100%); }
+  .train { background:linear-gradient(180deg,#10121c 0%,#171b2a 60%,#0d101b 100%); }
+  .hospital { background:linear-gradient(180deg,#0a0d16 0%,#101628 60%,#080b13 100%); }
+  .twilight { background:linear-gradient(180deg,#1b1226 0%,#3a2140 35%,#6b3a4a 62%,#17101f 100%); }
+  .river { background:linear-gradient(180deg,#2a1c1c 0%,#5a3220 30%,#8a4a2e 55%,#402418 100%);
+    filter:sepia(.28) saturate(1.15) contrast(1.04); }
+  .fireflies { position:absolute; inset:0; pointer-events:none; }
+  .firefly { position:absolute; width:3px; height:3px; border-radius:50%; background:#ffe89a;
+    box-shadow:0 0 6px 2px rgba(255,216,120,.85), 0 0 14px 5px rgba(255,216,120,.25);
+    animation-name:ffloat, fflicker; animation-timing-function:ease-in-out, ease-in-out;
+    animation-iteration-count:infinite, infinite; }
+  @keyframes ffloat {
+    0% { transform:translate(0,0); }
+    22% { transform:translate(16px,-22px); }
+    48% { transform:translate(-12px,-38px); }
+    74% { transform:translate(-26px,-10px); }
+    100% { transform:translate(8px,4px); }
+  }
+  @keyframes fflicker {
+    0%,100% { opacity:.15; }
+    12% { opacity:.9; }
+    30% { opacity:.3; }
+    50% { opacity:1; }
+    70% { opacity:.2; }
+    88% { opacity:.75; }
+  }
+
+  #chapterCard { position:fixed; inset:0; z-index:32; display:flex; align-items:center; justify-content:center;
+    background:#05060a; opacity:0; pointer-events:none; transition:opacity .9s ease; text-align:center; padding:20px; }
+  #chapterCard.show { opacity:1; }
+  #chapterCard .num { color:var(--gold); font-size:13px; letter-spacing:4px; margin-bottom:14px; opacity:.8; }
+  #chapterCard .kt { font-size:36px; letter-spacing:2px; }
+  #chapterCard ruby rt { font-size:13px; color:var(--dim); letter-spacing:0; }
+  #chapterCard .line { width:46px; height:1px; background:var(--accent); margin:18px auto 0; opacity:.7; }
+
+  #ui { position:fixed; left:0; right:0; bottom:0; z-index:10; padding:0 16px 16px; }
+  #mbox {
+    max-width:860px; margin:0 auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:16px 20px 14px; backdrop-filter:blur(6px);
+    min-height:138px; box-shadow:0 -8px 40px rgba(0,0,0,.5);
+    display:none; opacity:0; transform:translateY(8px);
+    transition:opacity .4s ease, transform .4s ease;
+  }
+  #mbox.show { display:block; }
+  #mbox.in { opacity:1; transform:translateY(0); }
+  #who { display:block; font-size:12px; color:var(--gold); letter-spacing:1px;
+    text-transform:uppercase; margin-bottom:4px; min-height:16px; }
+  #ja { font-size:23px; line-height:1.7; letter-spacing:.5px; min-height:76px; cursor:pointer; }
+  #ja .glos { color:var(--gold); }
+  #pl { font-size:15px; color:var(--dim); line-height:1.55; min-height:20px; margin-top:4px;
+    opacity:0; transition:opacity .5s ease; }
+  #pl.show { opacity:.96; }
+  #bar { display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  #chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { background:rgba(244,185,66,.12); border:1px solid rgba(244,185,66,.35); color:var(--gold);
+    padding:2px 10px; border-radius:999px; font-size:13px; cursor:pointer; animation:chippop .5s ease; }
+  @keyframes chippop { from { transform:scale(.7); opacity:0; } to { transform:scale(1); opacity:1; } }
+  #cnext { margin-left:auto; background:var(--accent); border:0; color:#fff; border-radius:999px;
+    padding:8px 18px; font-size:15px; cursor:pointer; font-family:inherit; }
+  #cnext.pulse { animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(230,57,70,.5); } 50% { box-shadow:0 0 0 7px rgba(230,57,70,0); } }
+  #cspeak { background:transparent; border:1px solid var(--line); color:var(--ink); border-radius:999px;
+    padding:8px 12px; cursor:pointer; font-size:15px; }
+
+  #choices { max-width:860px; margin:14px auto 0; display:none; gap:10px; }
+  #choices.show { display:flex; flex-wrap:wrap; }
+  .choice { background:rgba(255,255,255,.05); border:1px solid var(--line); color:var(--ink);
+    padding:12px 18px; border-radius:12px; cursor:pointer; font-family:inherit; font-size:15px;
+    transition:border-color .15s, background .15s; }
+  .choice:hover { border-color:var(--gold); background:rgba(244,185,66,.08); }
+
+  #dots { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:20;
+    display:flex; gap:5px; }
+  .dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.14);
+    transition:background .3s; }
+  .dot.on { background:var(--gold); }
+
+  #back { position:fixed; top:14px; left:14px; z-index:20; background:rgba(0,0,0,.25);
+    border:1px solid var(--line); color:var(--ink); border-radius:999px; padding:7px 13px;
+    cursor:pointer; font-family:inherit; font-size:13px; }
+
+  #overlay { position:fixed; inset:0; z-index:40; background:rgba(8,10,16,.97);
+    display:flex; align-items:center; justify-content:center; padding:18px; overflow:auto; }
+  #overlay.hide { display:none; }
+  .card { max-width:600px; width:100%; background:#171b2a; border:1px solid var(--line);
+    border-radius:16px; padding:24px; }
+  .card h1 { margin:0 0 4px; font-size:24px; }
+  .card h1 span { color:var(--accent); }
+  .card .genre { display:inline-block; margin-bottom:6px; background:rgba(244,185,66,.12);
+    border:1px solid rgba(244,185,66,.35); color:var(--gold); padding:2px 10px; border-radius:999px; font-size:13px; }
+  .card p { color:var(--dim); line-height:1.7; margin-top:10px; }
+  .card code { color:var(--gold); }
+  .btn { border:0; border-radius:999px; padding:12px 20px; font-size:16px; cursor:pointer;
+    font-family:inherit; margin-top:14px; background:var(--gold); color:#171006; }
+  .btn.ghost { background:transparent; border:1px solid var(--line); color:var(--ink); margin-left:8px; }
+
+  #gloss { position:fixed; left:0; right:0; bottom:0; top:0; z-index:30; display:none;
+    align-items:flex-end; justify-content:center; background:rgba(6,8,14,.6); }
+  #gloss.show { display:flex; }
+  .gsheet { max-width:560px; width:96%; background:#171b2a; border:1px solid var(--line);
+    border-radius:16px 16px 0 0; padding:18px 20px 24px; max-height:60vh; overflow:auto; }
+  .gw { font-size:26px; }
+  .gk { color:var(--dim); margin-left:10px; font-size:18px; }
+  .gm { color:var(--gold); margin-top:6px; font-size:15px; line-height:1.5; }
+  .gclose { float:right; background:transparent; border:0; color:var(--dim); font-size:22px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="bgLayer"></div></div>
+<div class="vignette"></div><div class="grain"></div>
+<div id="flash"></div>
+<button id="back">← Gra</button>
+<div id="dots"></div>
+<div id="chapterCard"></div>
+
+<div id="ui">
+  <div id="mbox">
+    <div id="who"></div>
+    <div id="ja"></div>
+    <div id="pl"></div>
+    <div id="bar">
+      <div id="chips"></div>
+      <button id="cspeak" title="読む">🔊</button>
+      <button id="cnext">次へ ▸</button>
+    </div>
+  </div>
+  <div id="choices"></div>
+</div>
+
+<div id="gloss"><div class="gsheet"><button class="gclose" id="gclose">×</button><div id="glist"></div></div></div>
+
+<div id="overlay">
+  <div class="card" id="cardInner">
+    <h1 id="ovTitle">⏳ Ładuję…</h1>
+    <div class="genre" id="ovGenre"></div>
+    <p id="ovBody"></p>
+    <button class="btn" id="btnStart">▶ 始める — Rozpocznij</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+var BG_CLASSES = ['night','rain','station','train','hospital','twilight','river'];
+var FIREFLY_BG = { night:true, twilight:true, river:true };
+
+var SCRIPT = null;
+var SCENES = [];
+var story = null;
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function plain(s) { return String(s).replace(/★([^★]*)★/g, '$1'); }
+function decorate(s) {
+  return esc(s).replace(/★([^★]*)★/g, '<span class="glos">$1</span>').replace(/★/g, '');
+}
+
+var GENRES = { normal:'normalna', whump:'whump', horror:'horror', twist:'zwrot akcji' };
+
+function loadScript() {
+  try { SCRIPT = JSON.parse(localStorage.getItem('n2.vn.ai') || 'null'); }
+  catch (e) { SCRIPT = null; }
+  if (!SCRIPT || !Array.isArray(SCRIPT.chapters) || !SCRIPT.chapters.length) {
+    var body = document.getElementById('ovBody');
+    document.getElementById('ovTitle').textContent = 'Brak wygenerowanej powieści';
+    document.getElementById('ovGenre').textContent = 'AI';
+    body.innerHTML = 'Najpierw wygeneruj powieść wizualną w grze: zakładka „📖 Historyjka (AI)“ → przycisk <code>📼 Generuj VN AI</code>. Wynik zapisuje się w tej przeglądarce (<code>localStorage</code>), więc wygeneruj ją na urządzeniu, na którym chcesz czytać.';
+    document.getElementById('btnStart').style.display = 'none';
+    return;
+  }
+  var g = GENRES[SCRIPT.genre] || SCRIPT.genre || '';
+  document.getElementById('ovTitle').innerHTML = esc(SCRIPT.titleJA || 'Powieść wizualna') + (SCRIPT.titlePL ? ' <span>— ' + esc(SCRIPT.titlePL) + '</span>' : '');
+  document.getElementById('ovGenre').textContent = g ? ('gatunek: ' + g) : 'AI';
+  document.getElementById('ovBody').innerHTML = 'Powieść wizualna wygenerowana przez Gemini ze słówek N2. Czytaj zdania po japońsku, klikaj złote słówka (lub chipy na dole) po słowniczek, słuchaj 🔊. Wybór w środku historii prowadzi do dwóch różnych zakończeń. Możesz bezpiecznie zamknąć tę kartę — postęp nie jest zapisywany.';
+  document.getElementById('btnStart').style.display = '';
+  buildScenes();
+}
+
+function buildScenes() {
+  SCENES = [];
+  var sc = SCRIPT;
+  var after = sc.choice ? sc.choice.afterChapter : -1;
+  (sc.chapters || []).forEach(function (ch, idx) {
+    var paras = ch.paras || [];
+    paras.forEach(function (p, pi) {
+      SCENES.push({
+        bg: ch.bg != null ? ch.bg : 0, who: p.who != null ? p.who : ch.who, para: cloneP(p),
+        chapterStart: pi === 0, chapterTitle: ch.titleJA, chapterKana: ch.kana, chapterNum: idx + 1
+      });
+    });
+    if (sc.choice && idx === after) {
+      (sc.choice.paras || []).forEach(function (cp, cpi) {
+        SCENES.push({ bg: ch.bg, who: ch.who, para: { ja: cp.ja, pl: cp.pl, k: -1 }, chapterStart: false });
+      });
+      SCENES.push({
+        bg: ch.bg, who: ch.who, para: { ja: '', pl: '', k: -1, empty: true }, end: true,
+        choices: sc.choice.options.map(function (o) { return { label: o.label, note: o.note }; })
+      });
+    }
+  });
+}
+
+function cloneP(p) {
+  var c = { ja:p.ja, pl:p.pl || '', k:-1 };
+  if (p.fx) c.fx = p.fx;
+  if (p.variants) c.variants = p.variants.slice();
+  return c;
+}
+
+function start() {
+  document.getElementById('overlay').classList.add('hide');
+  story = { s: 0, choice: null, over: false };
+  dots();
+  showScene();
+}
+
+function dots() {
+  var box = document.getElementById('dots');
+  box.innerHTML = '';
+  var N = SCENES.length;
+  if (!N) return;
+  var seg = Math.max(1, Math.round(N / 22));
+  var active = Math.floor(Math.min(story.s, N - 1) / seg);
+  var count = Math.ceil(N / seg);
+  for (var i = 0; i < count; i++) {
+    var d = document.createElement('span');
+    d.className = 'dot' + (i === active ? ' on' : '');
+    box.appendChild(d);
+  }
+}
+
+var typing = null, skipped = false, doneTyping = false;
+
+function stopTyping() { if (typing) { clearInterval(typing); typing = null; } }
+
+function fullHtml() { return decorate(SCENES[story.s].para.ja); }
+function rawJa() { return plain(SCENES[story.s].para.ja); }
+
+function typeJa() {
+  var el = document.getElementById('ja');
+  var pl = document.getElementById('pl');
+  pl.classList.remove('show'); pl.textContent = '';
+  el.innerHTML = ''; doneTyping = false;
+  document.getElementById('cnext').classList.remove('pulse');
+  var text = rawJa();
+  if (skipped) { el.innerHTML = fullHtml(); finishLine(); return; }
+  var i = 0;
+  typing = setInterval(function () {
+    i++;
+    el.innerHTML = esc(text.slice(0, i));
+    if (i >= text.length + 12) { stopTyping(); el.innerHTML = fullHtml(); finishLine(); }
+  }, 34);
+}
+
+function finishLine() {
+  doneTyping = true;
+  var pl = document.getElementById('pl');
+  if (SCENES[story.s].para.pl) { pl.textContent = SCENES[story.s].para.pl; pl.classList.add('show'); }
+  chips();
+  document.getElementById('cnext').classList.add('pulse');
+}
+
+function vocabLookup(w) {
+  if (!SCRIPT || !SCRIPT.vocab) return null;
+  for (var i = 0; i < SCRIPT.vocab.length; i++) {
+    if (STRINGMATCH(SCRIPT.vocab[i].w, w)) return SCRIPT.vocab[i];
+  }
+  return null;
+}
+function STRINGMATCH(a, b) { return String(a || '') === String(b || ''); }
+
+function chips() {
+  var box = document.getElementById('chips');
+  box.innerHTML = '';
+  var para = SCENES[story.s].para;
+  if (!para || !para.ja) return;
+  var seen = {};
+  var m = String(para.ja).match(/★([^★]+)★/g) || [];
+  m.forEach(function (mark) {
+    var w = mark.slice(1, -1);
+    if (seen[w]) return;
+    seen[w] = 1;
+    var v = vocabLookup(w);
+    var c = document.createElement('span');
+    c.className = 'chip';
+    c.textContent = w + (v && v.r && v.r !== w ? ' (' + v.r + ')' : '');
+    c.onclick = function (e) { e.stopPropagation(); openGloss(w); };
+    box.appendChild(c);
+  });
+}
+
+function openGloss(w) {
+  var box = document.getElementById('glist');
+  var layer = document.getElementById('gloss');
+  box.innerHTML = '';
+  var v = vocabLookup(w);
+  var html = '<span class="gw">' + esc(w) + '</span>';
+  if (v && v.r && v.r !== w) html += '<span class="gk">' + esc(v.r) + '</span>';
+  html += '<div class="gm">' + (v ? esc(v.pl || v.m || '') : esc(w)) + '</div>';
+  var d = document.createElement('div');
+  d.innerHTML = html;
+  box.appendChild(d);
+  layer.classList.add('show');
+  speak(w + '。' + ((v && v.r) || w));
+}
+
+function triggerFx(fx) {
+  var stage = document.getElementById('stage');
+  var flash = document.getElementById('flash');
+  if (fx === 'shake') {
+    stage.classList.remove('fx-shake'); void stage.offsetWidth; stage.classList.add('fx-shake');
+  } else if (fx === 'flash') {
+    flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+  } else if (fx === 'flicker') {
+    stage.classList.remove('fx-flicker'); void stage.offsetWidth; stage.classList.add('fx-flicker');
+  }
+}
+
+function advance() {
+  if (!story || story.over) return;
+  var gloss = document.getElementById('gloss');
+  if (gloss.classList.contains('show')) return;
+  var sc = SCENES[story.s];
+  if (typing) { skipped = true; stopTyping(); typeJa(); return; }
+  if (!doneTyping) { skipped = true; typeJa(); return; }
+  if (sc.end && sc.choices) { showChoices(); return; }
+  if (story.s + 1 < SCENES.length) { story.s++; skipped = false; showScene(); }
+  else { showEnding(); }
+}
+
+function applyChoice(idx) {
+  story.choice = idx;
+  for (var i = story.s + 1; i < SCENES.length; i++) {
+    var p = SCENES[i].para;
+    if (p && p.variants) { p.ja = p.variants[idx]; delete p.variants; }
+  }
+}
+
+function showChapterCard(sc, then) {
+  var card = document.getElementById('chapterCard');
+  card.innerHTML = '<div><div class="num">第' + sc.chapterNum + '章</div>' +
+    '<div class="kt">' + (sc.chapterKana ? '<ruby>' + esc(sc.chapterTitle) + '<rt>' + esc(sc.chapterKana) + '</rt></ruby>' : esc(sc.chapterTitle)) + '</div>' +
+    '<div class="line"></div></div>';
+  card.classList.add('show');
+  setTimeout(function () {
+    card.classList.remove('show');
+    setTimeout(then, 900);
+  }, 1500);
+}
+
+function showScene() {
+  var sc = SCENES[story.s];
+  var mbox = document.getElementById('mbox');
+  function render() {
+    mbox.classList.add('show');
+    mbox.classList.remove('in');
+    document.getElementById('choices').classList.remove('show');
+    document.getElementById('who').textContent = sc.who || '';
+    setBg(sc.bg || 0);
+    skipped = false;
+    requestAnimationFrame(function () { mbox.classList.add('in'); });
+    typeJa();
+    dots();
+    if (sc.para && sc.para.fx) setTimeout(function () { triggerFx(sc.para.fx); }, 120);
+    if (sc.end && sc.choices) { showChoices(); }
+  }
+  if (sc.chapterStart) { mbox.classList.remove('show'); showChapterCard(sc, render); }
+  else render();
+}
+
+function showChoices() {
+  var sc = SCENES[story.s];
+  var box = document.getElementById('choices');
+  box.innerHTML = '';
+  var items = sc.choices || [{ label:'次へ ▸', note:null }];
+  items.forEach(function (ch, i) {
+    var b = document.createElement('button');
+    b.className = 'choice';
+    b.textContent = ch.label;
+    b.onclick = function () {
+      box.classList.remove('show');
+      applyChoice(i);
+      if (ch.note) {
+        var cur = SCENES[story.s];
+        SCENES.splice(story.s + 1, 0, { bg: cur.bg, who: cur.who, para: { ja: '', pl: ch.note, k: -1 } });
+      }
+      if (story.s + 1 < SCENES.length) { story.s++; skipped = false; showScene(); }
+      else showEnding();
+    };
+    box.appendChild(b);
+  });
+  box.classList.add('show');
+}
+
+function showEnding() {
+  story.over = true;
+  document.getElementById('mbox').classList.remove('show');
+  document.getElementById('choices').classList.remove('show');
+  var idx = story.choice != null ? story.choice : 0;
+  var end = (SCRIPT.endings || [])[idx] || { title:'…', sub:'…', body:'…' };
+  var overlay = document.getElementById('overlay');
+  document.getElementById('cardInner').innerHTML =
+    '<div class="genre">gatunek: ' + esc(GENRES[SCRIPT.genre] || SCRIPT.genre || 'AI') + '</div>' +
+    '<h1>' + esc(end.title) + ' <span>— ' + esc(end.sub) + '</span></h1>' +
+    '<p>' + esc(end.body) + '</p>' +
+    '<button class="btn" id="btnRestart">▶ もう一度 — Zagraj ponownie</button>' +
+    '<button class="btn ghost" id="btnHome">← Gra</button>';
+  overlay.classList.remove('hide');
+  document.getElementById('btnRestart').addEventListener('click', function () {
+    buildScenes();
+    start();
+  });
+  document.getElementById('btnHome').addEventListener('click', function () {
+    window.location.href = 'index.html';
+  });
+}
+
+function setBg(k) {
+  if (k < 0 || k >= BG_CLASSES.length) k = BG_CLASSES.length - 1;
+  var layer = document.getElementById('bgLayer');
+  var div = document.createElement('div');
+  div.className = 'bg ' + BG_CLASSES[k] + ' on';
+  if (FIREFLY_BG[BG_CLASSES[k]]) {
+    var fbox = document.createElement('div');
+    fbox.className = 'fireflies';
+    var n = 8 + Math.floor(Math.random() * 6);
+    for (var i = 0; i < n; i++) {
+      var f = document.createElement('span');
+      f.className = 'firefly';
+      f.style.left = (5 + Math.random() * 90) + '%';
+      f.style.top = (15 + Math.random() * 65) + '%';
+      f.style.animationDuration = (3 + Math.random() * 3).toFixed(2) + 's, ' + (2 + Math.random() * 2.5).toFixed(2) + 's';
+      f.style.animationDelay = (Math.random() * 3).toFixed(2) + 's, ' + (Math.random() * 3).toFixed(2) + 's';
+      fbox.appendChild(f);
+    }
+    div.appendChild(fbox);
+  }
+  layer.appendChild(div);
+  [].slice.call(layer.children).forEach(function (c) {
+    if (c !== div) { c.classList.remove('on'); setTimeout(function(){ if (c.parentNode) c.parentNode.removeChild(c); }, 1500); }
+  });
+}
+
+function speak(text) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text.replace(/<[^>]*>/g, ''));
+    u.lang = 'ja-JP'; u.rate = 0.85;
+    var v = window.speechSynthesis.getVoices().filter(function (x) { return /ja/i.test(x.lang); })[0];
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+document.getElementById('cnext').addEventListener('click', advance);
+document.getElementById('ja').addEventListener('click', advance);
+document.getElementById('cspeak').addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (story) speak(rawJa());
+});
+document.getElementById('gclose').addEventListener('click', function () {
+  document.getElementById('gloss').classList.remove('show');
+  window.speechSynthesis.cancel();
+});
+document.getElementById('btnStart').addEventListener('click', start);
+document.getElementById('back').addEventListener('click', function () { window.location.href = 'index.html'; });
+document.addEventListener('keydown', function (e) {
+  if (e.code === 'Escape') {
+    document.getElementById('gloss').classList.remove('show');
+    return;
+  }
+  if (e.code === 'Space' || e.code === 'Enter') {
+    e.preventDefault();
+    var overlay = document.getElementById('overlay');
+    if (!overlay.classList.contains('hide')) {
+      var startBtn = document.getElementById('btnStart');
+      var restartBtn = document.getElementById('btnRestart');
+      if (restartBtn) restartBtn.click(); else startBtn.click();
+      return;
+    }
+    advance();
+  }
+});
+
+loadScript();
+</script>
+</body>
+</html>
