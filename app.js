@@ -10,7 +10,7 @@
   var LS_KEY = 'n2game.v1';
   var state = {
     status: {},          // idx -> 'new' | 'learn' | 'know'
-    settings: { batchSize: 10, quizMode: 'km', sound: true, geminiKey: '', geminiModel: 'gemini-3.7-flash', ghRepo: '', ghBranch: 'main', ghToken: '', ghDevice: '', ghOn: true },
+    settings: { batchSize: 10, quizMode: 'km', sound: true, geminiKey: '', geminiModel: 'gemini-3.7-flash', ghRepo: '', ghBranch: '', ghToken: '', ghDevice: '', ghOn: true },
     group: [],           // current group indices
     groupKey: '',        // cache key for story
     stats: { played: 0, correct: 0, streaks: 0, bestStreak: 0, batches: 0, stories: 0 }
@@ -90,9 +90,9 @@
     if (o.body !== undefined) h['content-type'] = 'application/json';
     return fetch('https://api.github.com' + path, { method: o.method, headers: h, body: o.body !== undefined ? JSON.stringify(o.body) : undefined });
   }
-  function ghProgressUrl() {
+  function ghProgressUrl(branch) {
     var cfg = state.settings;
-    return '/repos/' + cfg.ghRepo + '/contents/' + GH_PROGRESS_PATH + '?ref=' + encodeURIComponent(cfg.ghBranch || 'main');
+    return '/repos/' + cfg.ghRepo + '/contents/' + GH_PROGRESS_PATH + '?ref=' + encodeURIComponent(branch || cfg.ghBranch || 'main');
   }
   function mergeStatus(a, b) {
     var order = { new: 0, learn: 1, know: 2 }, out = {}, keys = {};
@@ -109,20 +109,23 @@
     ['played', 'correct', 'streaks', 'bestStreak', 'batches', 'stories'].forEach(function (k) { out[k] = Math.max(a[k] || 0, b[k] || 0); });
     return out;
   }
-  function ghWrite(sha) {
+  function ghWrite(sha, branch) {
     var cfg = state.settings;
-    var body = { message: 'Sync postepu [NihongoN2]', content: b64e(JSON.stringify(progressPayload())), branch: cfg.ghBranch || 'main' };
+    var body = { message: 'Sync postepu [NihongoN2]', content: b64e(JSON.stringify(progressPayload())), branch: branch || cfg.ghBranch || 'main' };
     if (sha) body.sha = sha;
     return ghApi('/repos/' + cfg.ghRepo + '/contents/' + GH_PROGRESS_PATH, { method: 'PUT', body: body }).then(function (r) {
       if (r.status !== 200 && r.status !== 201) {
         return r.json().catch(function () { return null; }).then(function (j) {
-          throw new Error('Zapis w repo nieudany (HTTP ' + r.status + '): ' + ((j && j.message) || ''));
+          var msg = (j && j.message) || '';
+          if (r.status === 403) throw new Error('Token nie ma uprawnień zapisu (HTTP 403): ' + msg + ' — token musi mieć zakres „repo” (lub fine-grained: Contents read/write).');
+          if (r.status === 422) throw new Error('Nie da się zapisać do gałęzi ' + (branch || 'main') + ' (HTTP 422): ' + msg);
+          throw new Error('Zapis w repo nieudany (HTTP ' + r.status + '): ' + msg);
         });
       }
       return true;
     });
   }
-  function mergeAndWrite(remote, sha) {
+  function mergeAndWrite(remote, sha, branch) {
     var local = progressPayload();
     var status = mergeStatus(local.status, remote.status || {});
     var stats = mergeStats(local.stats, remote.stats || {});
@@ -134,7 +137,22 @@
     var payload = progressPayload();
     var same = JSON.stringify(payload.status) === JSON.stringify(remote.status || {}) && JSON.stringify(payload.stats) === JSON.stringify(remote.stats || {});
     if (same) { syncMeta.fp = progressFp(); storeSyncMeta(); return Promise.resolve(false); }
-    return ghWrite(sha).then(function () { syncMeta.fp = progressFp(); storeSyncMeta(); return true; });
+    return ghWrite(sha, branch).then(function () { syncMeta.fp = progressFp(); storeSyncMeta(); return true; });
+  }
+  // pobiera domyślną gałąź repo (leniwie, zapamiętana), do celów zapisu
+  function ghResolveBranch() {
+    var cfg = state.settings;
+    if (cfg.ghBranch && cfg.ghBranch !== 'main') return Promise.resolve(cfg.ghBranch);
+    return ghApi('/repos/' + cfg.ghRepo, { method: 'GET' }).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (j) {
+        if (r.status === 401 || r.status === 403) throw new Error('Brak dostępu do repo (HTTP ' + r.status + ') — sprawdź token (zakres repo).');
+        if (r.status === 404) throw new Error('Repo nie istnieje: ' + cfg.ghRepo + ' — sprawdź pisownię „login/repo”.');
+        if (r.status !== 200 || !j) throw new Error('GitHub API: HTTP ' + r.status);
+        var b = (j.default_branch || 'main');
+        if (!cfg.ghBranch || cfg.ghBranch === 'main') { cfg.ghBranch = b; }
+        return b;
+      });
+    });
   }
   function syncNow(force) {
     var cfg = state.settings;
@@ -146,16 +164,18 @@
     syncMeta.lastAt = now;
     syncing = true;
     setSyncMsg('Synchronizuję…');
-    ghApi(ghProgressUrl(), { method: 'GET' }).then(function (r) {
-      return r.json().catch(function () { return null; }).then(function (j) { return { status: r.status, json: j }; });
-    }).then(function (res) {
-      if (res.status === 404) return ghWrite(null).then(function () { return true; });
-      if (res.status === 401 || res.status === 403) throw new Error('Brak dostępu (HTTP ' + res.status + ') — sprawdź token i uprawnienia do repo.');
-      if (res.status === 429) throw new Error('Limit GitHub API (HTTP 429) — odczekaj chwilę.');
-      if (res.status !== 200 || !res.json) throw new Error('GitHub API: HTTP ' + res.status);
-      var remote = null;
-      try { remote = JSON.parse(b64d(res.json.content)); } catch (e) { throw new Error('Nieprawidłowy zapis w progress/save.json na GitHubie.'); }
-      return mergeAndWrite(remote, res.json.sha);
+    ghResolveBranch().then(function (branch) {
+      return ghApi(ghProgressUrl(branch), { method: 'GET' }).then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (j) { return { status: r.status, json: j }; });
+      }).then(function (res) {
+        if (res.status === 404) return ghWrite(null, branch).then(function () { return true; });
+        if (res.status === 401 || res.status === 403) throw new Error('Brak dostępu do pliku (HTTP ' + res.status + ') — sprawdź token i uprawnienia do repo.');
+        if (res.status === 429) throw new Error('Limit GitHub API (HTTP 429) — odczekaj chwilę.');
+        if (res.status !== 200 || !res.json) throw new Error('GitHub API: HTTP ' + res.status);
+        var remote = null;
+        try { remote = JSON.parse(b64d(res.json.content)); } catch (e) { throw new Error('Nieprawidłowy zapis w progress/save.json na GitHubie.'); }
+        return mergeAndWrite(remote, res.json.sha, branch);
+      });
     }).then(function (done) {
       setSyncMsg(done ? 'Postęp zsynchronizowany ✓' : 'Wszystko zsynchronizowane ✓');
     }).catch(function (e) {
@@ -165,12 +185,14 @@
   window.N2GAME_SYNC_CLEAR = function (cb) {
     var cfg = state.settings;
     if (!cfg.ghOn || !cfg.ghRepo || !cfg.ghToken || !window.fetch) { if (cb) cb(); return; }
-    ghApi(ghProgressUrl(), { method: 'GET' }).then(function (r) {
-      return r.json().catch(function () { return null; }).then(function (j) { return { status: r.status, json: j }; });
-    }).then(function (res) {
-      if (res.status !== 200 || !res.json || !res.json.sha) { if (cb) cb(); return; }
-      return ghApi('/repos/' + cfg.ghRepo + '/contents/' + GH_PROGRESS_PATH, { method: 'DELETE', body: { message: 'Wyczyszczono postep [NihongoN2]', sha: res.json.sha, branch: cfg.ghBranch || 'main' } })
-        .then(function () { if (cb) cb(); }).catch(function () { if (cb) cb(); });
+    ghResolveBranch().then(function (branch) {
+      return ghApi(ghProgressUrl(branch), { method: 'GET' }).then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (j) { return { status: r.status, json: j }; });
+      }).then(function (res) {
+        if (res.status !== 200 || !res.json || !res.json.sha) { if (cb) cb(); return; }
+        return ghApi('/repos/' + cfg.ghRepo + '/contents/' + GH_PROGRESS_PATH, { method: 'DELETE', body: { message: 'Wyczyszczono postep [NihongoN2]', sha: res.json.sha, branch: branch || 'main' } })
+          .then(function () { if (cb) cb(); }).catch(function () { if (cb) cb(); });
+      });
     }).catch(function () { if (cb) cb(); });
   };
 
@@ -554,6 +576,12 @@
     tokInp.value = state.settings.ghToken || '';
     tokInp.placeholder = 'ghp_…';
     rTok.appendChild(tokInp);
+    var rBr = el('div', 'sett-row');
+    rBr.appendChild(el('label', '', 'Gałąź (pusta = domyślna repo): '));
+    var brInp = el('input', 'dict-inp');
+    brInp.value = (state.settings.ghBranch && state.settings.ghBranch !== 'main') ? state.settings.ghBranch : '';
+    brInp.placeholder = 'np. master / main';
+    rBr.appendChild(brInp);
     var rowBtn = el('div', 'sett-row');
     var bSaveCfg = el('button', 'btn pri', 'Zapisz ustawienia sync');
     var bSyncNow = el('button', 'btn', '🔥 Synchronizuj teraz');
@@ -565,11 +593,12 @@
       state.settings.ghRepo = repInp.value.trim();
       state.settings.ghDevice = devInp.value.trim();
       state.settings.ghToken = tokInp.value.trim();
+      state.settings.ghBranch = brInp.value.trim() || '';
       save();
     }
     bSaveCfg.onclick = function () { commitGhCfg(); setSyncMsg('Ustawienia sync zapisane.'); };
     bSyncNow.onclick = function () { commitGhCfg(); syncNow(true); };
-    syncCard.append(rRepo, rDev, rTok, rowBtn, syncStatus);
+    syncCard.append(rRepo, rDev, rTok, rBr, rowBtn, syncStatus);
     sec.appendChild(syncCard);
 
     main.appendChild(sec);
