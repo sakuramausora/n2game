@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>狐火の宮 — visual novel N2+</title>
+<style>
+  :root {
+    --bg:#0e1018; --ink:#eceaf6; --dim:#a8a7bd; --accent:#e63946; --gold:#f4b942;
+    --panel:rgba(20,22,34,.94); --line:rgba(255,255,255,.09);
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; height:100%; overflow:hidden; }
+  body {
+    background:#0e1018; color:var(--ink);
+    font-family:"Segoe UI",-apple-system,"Yu Gothic UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  }
+  #stage {
+    position:fixed; inset:0; z-index:0;
+    background:#0e1018;
+    transition:background 1.2s ease;
+  }
+  #stage.fx-shake { animation:shake .45s cubic-bezier(.36,.07,.19,.97) both; }
+  #stage.fx-flicker { animation:flicker 1.1s steps(12) both; }
+  @keyframes shake {
+    10%,90% { transform:translate3d(-1px,0,0); }
+    20%,80% { transform:translate3d(2px,0,0); }
+    30%,50%,70% { transform:translate3d(-4px,0,0); }
+    40%,60% { transform:translate3d(4px,0,0); }
+  }
+  @keyframes flicker {
+    0%,19%,21%,23%,55%,57%,100% { opacity:1; filter:brightness(1); }
+    20%,22%,56% { opacity:.35; filter:brightness(2.2); }
+  }
+  #flash { position:fixed; inset:0; z-index:35; background:#fff; opacity:0; pointer-events:none; }
+  #flash.go { animation:flashpop .35s ease-out; }
+  @keyframes flashpop { 0% { opacity:0; } 8% { opacity:.85; } 100% { opacity:0; } }
+
+  .vignette { position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,.55) 100%); }
+  .grain { position:fixed; inset:0; z-index:2; pointer-events:none; opacity:.05;
+    background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.6) 0 1px,transparent 1px 3px); }
+
+  .bg { position:absolute; inset:0; overflow:hidden; opacity:0; transition:opacity 1.4s ease; }
+  .bg.on { opacity:1; }
+  .bg::after { content:""; position:absolute; inset:0; }
+
+  .night { background:linear-gradient(180deg,#070c14 0%,#101730 40%,#1a2340 70%,#0c1020 100%); }
+  .rain { background:linear-gradient(180deg,#04060b 0%,#0a1120 55%,#0d1730 100%); }
+  .rain::after { animation:rain .5s linear infinite;
+    background-image:repeating-linear-gradient(95deg, transparent 0 26px, rgba(180,210,255,.20) 26px 29px, transparent 29px 60px);
+    background-size:60px 8px; }
+  .station { background:linear-gradient(180deg,#0a0d16 0%,#141a2c 50%,#0b0d16 100%); }
+  .train { background:linear-gradient(180deg,#080b13 0%,#101a2c 60%,#080b13 100%); }
+  .hospital { background:linear-gradient(180deg,#1c130f 0%,#2a1b14 55%,#120c08 100%); }
+  .twilight { background:linear-gradient(180deg,#241a35 0%,#3a2140 35%,#6b3a4a 62%,#17101f 100%); }
+  .river { background:linear-gradient(180deg,#2a1c1c 0%,#5a3220 30%,#8a4a2e 55%,#402418 100%);
+    filter:sepia(.22) saturate(1.1) contrast(1.03); }
+
+  .bg svg { position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  .fireflies { position:absolute; inset:0; pointer-events:none; }
+  .firefly { position:absolute; width:3px; height:3px; border-radius:50%; background:#cdeeff;
+    box-shadow:0 0 6px 2px rgba(150,220,255,.85), 0 0 14px 5px rgba(140,210,255,.25);
+    animation-name:ffloat, fflicker; animation-timing-function:ease-in-out, ease-in-out;
+    animation-iteration-count:infinite, infinite; }
+  @keyframes ffloat {
+    0% { transform:translate(0,0); }
+    22% { transform:translate(16px,-22px); }
+    48% { transform:translate(-12px,-38px); }
+    74% { transform:translate(-26px,-10px); }
+    100% { transform:translate(8px,4px); }
+  }
+  @keyframes fflicker {
+    0%,100% { opacity:.15; }
+    12% { opacity:.9; }
+    30% { opacity:.3; }
+    50% { opacity:1; }
+    70% { opacity:.2; }
+    88% { opacity:.75; }
+  }
+
+  #chapterCard { position:fixed; inset:0; z-index:32; display:flex; align-items:center; justify-content:center;
+    background:#05060a; opacity:0; pointer-events:none; transition:opacity .9s ease; text-align:center; padding:20px; }
+  #chapterCard.show { opacity:1; }
+  #chapterCard .num { color:var(--gold); font-size:13px; letter-spacing:4px; margin-bottom:14px; opacity:.8; }
+  #chapterCard .kt { font-size:38px; letter-spacing:2px; }
+  #chapterCard ruby rt { font-size:14px; color:var(--dim); letter-spacing:0; }
+  #chapterCard .line { width:46px; height:1px; background:var(--accent); margin:18px auto 0; opacity:.7; }
+
+  #ui {
+    position:fixed; left:0; right:0; bottom:0; z-index:10;
+    padding:0 16px 16px;
+  }
+  #mbox {
+    max-width:860px; margin:0 auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:16px 20px 14px; backdrop-filter:blur(6px);
+    min-height:120px; box-shadow:0 -8px 40px rgba(0,0,0,.5);
+    display:none; opacity:0; transform:translateY(8px);
+    transition:opacity .4s ease, transform .4s ease;
+  }
+  #mbox.show { display:block; }
+  #mbox.in { opacity:1; transform:translateY(0); }
+  #who { display:block; font-size:12px; color:var(--gold); letter-spacing:1px;
+    text-transform:uppercase; margin-bottom:4px; min-height:16px; }
+  #ja { font-size:23px; line-height:1.7; letter-spacing:.5px; min-height:76px; cursor:pointer; }
+  #ja .glos { color:var(--gold); }
+  #bar { display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  #chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { background:rgba(244,185,66,.12); border:1px solid rgba(244,185,66,.35); color:var(--gold);
+    padding:2px 10px; border-radius:999px; font-size:13px; cursor:pointer; animation:chippop .5s ease; }
+  @keyframes chippop { from { transform:scale(.7); opacity:0; } to { transform:scale(1); opacity:1; } }
+  #cnext { margin-left:auto; background:var(--accent); border:0; color:#fff; border-radius:999px;
+    padding:8px 18px; font-size:15px; cursor:pointer; font-family:inherit; }
+  #cnext.pulse { animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(230,57,70,.5); } 50% { box-shadow:0 0 0 7px rgba(230,57,70,0); } }
+  #cspeak { background:transparent; border:1px solid var(--line); color:var(--ink); border-radius:999px;
+    padding:8px 12px; cursor:pointer; font-size:15px; }
+
+  #choices { max-width:860px; margin:14px auto 0; display:none; gap:10px; }
+  #choices.show { display:flex; flex-wrap:wrap; }
+  .choice { background:rgba(255,255,255,.05); border:1px solid var(--line); color:var(--ink);
+    padding:12px 18px; border-radius:12px; cursor:pointer; font-family:inherit; font-size:15px;
+    transition:border-color .15s, background .15s; }
+  .choice:hover { border-color:var(--gold); background:rgba(244,185,66,.08); }
+
+  #dots { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:20;
+    display:flex; gap:5px; }
+  .dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.14);
+    transition:background .3s; }
+  .dot.on { background:var(--gold); }
+
+  #overlay { position:fixed; inset:0; z-index:40; background:rgba(8,10,16,.97);
+    display:flex; align-items:center; justify-content:center; padding:18px; overflow:auto; }
+  #overlay.hide { display:none; }
+  .card { max-width:600px; width:100%; background:#171b2a; border:1px solid var(--line);
+    border-radius:16px; padding:24px; }
+  .card h1 { margin:0 0 4px; font-size:24px; }
+  .card h1 span { color:var(--accent); }
+  .card p { color:var(--dim); line-height:1.7; margin-top:10px; }
+  .btn { border:0; border-radius:999px; padding:12px 20px; font-size:16px; cursor:pointer;
+    font-family:inherit; margin-top:14px; background:var(--gold); color:#171006; }
+  .btn.ghost { background:transparent; border:1px solid var(--line); color:var(--ink); margin-left:8px; }
+
+  #gloss { position:fixed; left:0; right:0; bottom:0; top:0; z-index:30; display:none;
+    align-items:flex-end; justify-content:center; background:rgba(6,8,14,.6); }
+  #gloss.show { display:flex; }
+  .gsheet { max-width:560px; width:96%; background:#171b2a; border:1px solid var(--line);
+    border-radius:16px 16px 0 0; padding:18px 20px 24px; max-height:60vh; overflow:auto; }
+  .gw { font-size:26px; }
+  .gk { color:var(--dim); margin-left:10px; font-size:18px; }
+  .gm { color:var(--gold); margin-top:6px; font-size:15px; line-height:1.5; }
+  .gclose { float:right; background:transparent; border:0; color:var(--dim); font-size:22px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="bgLayer"></div></div>
+<div class="vignette"></div><div class="grain"></div>
+<div id="flash"></div>
+<div id="dots"></div>
+<div id="chapterCard"></div>
+
+<div id="ui">
+  <div id="mbox">
+    <div id="who"></div>
+    <div id="ja"></div>
+    <div id="bar">
+      <div id="chips"></div>
+      <button id="cspeak" title="読む">🔊</button>
+      <button id="cnext">次へ ▸</button>
+    </div>
+  </div>
+  <div id="choices"></div>
+</div>
+
+<div id="gloss"><div class="gsheet"><button class="gclose" id="gclose">×</button><div id="glist"></div></div></div>
+
+<div id="overlay">
+  <div class="card" id="cardInner">
+    <h1>狐火の宮 <span>— ホラー・N2+</span></h1>
+    <p>Horrorowa powieść wizualna po japońsku, bez widocznych postaci — tym razem o górskiej świątyni, nocnym festiwalu i lisich ognikach (狐火). Wykorzystuje słówka N2 wplecione naturalnie w zdania historii, z rozdziałem wspomnień i dwoma różnymi zakończeniami, zależnymi od Twojego wyboru.</p>
+    <p>Zapożyczone słówka zapalają się na złoto. Po pojawieniu się chipa kliknij go, żeby zobaczyć czytanie (kana) i znaczenie. Kliknij tekst albo naciśnij spację, żeby przejść dalej.</p>
+    <button class="btn" id="btnStart">▶ 始める — Rozpocznij</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+var BG_CLASSES = ['night','rain','station','train','hospital','twilight','river'];
+
+var BACKGROUNDS = [
+  { cls:'night',  name:'forest', fireflies:true },
+  { cls:'rain',   name:'rain', fireflies:false },
+  { cls:'station',name:'courtyard', fireflies:false },
+  { cls:'train',  name:'sando', fireflies:false },
+  { cls:'hospital',name:'honden', fireflies:false },
+  { cls:'twilight',name:'dusk', fireflies:true },
+  { cls:'river',  name:'lake', fireflies:true }
+];
+
+var BG_DECOR = {
+  0: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="fsky0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#070c14"/><stop offset="1" stop-color="#152238"/></linearGradient>
+<radialGradient id="fmoon0" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#eaf3ff"/><stop offset="1" stop-color="#8fa6c9"/></radialGradient>
+<filter id="fglow0" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<linearGradient id="ffl0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f1420"/><stop offset="1" stop-color="#06090f"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="#0a0e18"/>
+<rect y="0" width="1200" height="470" fill="url(#fsky0)"/>
+<circle cx="940" cy="130" r="46" fill="url(#fmoon0)" filter="url(#fglow0)"/>
+<g fill="#0a1018"><path d="M0 420 L120 300 L260 420 Z"/><path d="M180 430 L340 260 L520 430 Z"/><path d="M420 420 L560 320 L720 420 Z"/><path d="M660 430 L840 250 L1020 430 Z"/><path d="M900 420 L1060 320 L1200 420 Z"/></g>
+<g fill="#101826">
+<path d="M420 400 L600 300 L780 400 L780 470 L420 470 Z"/>
+<path d="M380 400 L600 270 L820 400 Z"/>
+<rect x="586" y="330" width="28" height="70" fill="#050810"/>
+</g>
+<rect x="440" y="420" width="12" height="50" fill="#0a1420"/>
+<rect x="748" y="420" width="12" height="50" fill="#0a1420"/>
+<circle cx="446" cy="410" r="6" fill="#ffcf8a" opacity="0.85"/>
+<circle cx="754" cy="410" r="6" fill="#ffcf8a" opacity="0.85"/>
+<rect y="470" width="1200" height="205" fill="url(#ffl0)"/>
+<ellipse cx="600" cy="560" rx="520" ry="30" fill="#050810" opacity="0.5"/>
+</svg></div>`,
+  1: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="rsky1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#04060b"/><stop offset="1" stop-color="#0c1524"/></linearGradient>
+<linearGradient id="rfl1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1420"/><stop offset="1" stop-color="#060910"/></linearGradient>
+<radialGradient id="rglow1" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffd98a" stop-opacity="0.8"/><stop offset="1" stop-color="#ffd98a" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="675" fill="#070a12"/>
+<rect y="0" width="1200" height="380" fill="url(#rsky1)"/>
+<g fill="#0b1020" opacity="0.9"><path d="M480 260 L600 150 L720 260 L720 340 L600 300 L480 340 Z"/></g>
+<rect x="592" y="230" width="16" height="90" fill="#050810"/>
+<rect x="360" y="360" width="480" height="20" rx="8" fill="#141c2c"/>
+<rect x="380" y="400" width="440" height="18" rx="8" fill="#111827"/>
+<rect x="400" y="438" width="400" height="16" rx="8" fill="#0e1420"/>
+<circle cx="470" cy="270" r="10" fill="#ffd98a"/><circle cx="470" cy="270" r="34" fill="url(#rglow1)"/>
+<circle cx="730" cy="270" r="10" fill="#ffd98a"/><circle cx="730" cy="270" r="34" fill="url(#rglow1)"/>
+<rect y="470" width="1200" height="205" fill="url(#rfl1)"/>
+<g stroke="#4c7aa8" stroke-width="2" opacity="0.5"><path d="M100 0 l -40 120"/><path d="M260 40 l -40 120"/><path d="M420 10 l -40 120"/><path d="M600 60 l -40 120"/><path d="M780 20 l -40 120"/><path d="M960 50 l -40 120"/><path d="M1120 10 l -40 120"/></g>
+</svg></div>`,
+  2: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="csky2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a0d16"/><stop offset="1" stop-color="#171f30"/></linearGradient>
+<linearGradient id="cfl2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#15202e"/><stop offset="1" stop-color="#070a10"/></linearGradient>
+<radialGradient id="clamp2" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffe2a0" stop-opacity="0.95"/><stop offset="1" stop-color="#ffe2a0" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="675" fill="#0a0d16"/>
+<rect y="0" width="1200" height="440" fill="url(#csky2)"/>
+<g fill="#111a28"><path d="M0 380 L1200 380 L1200 440 L0 440 Z"/></g>
+<g fill="#0c1420">
+<rect x="150" y="290" width="46" height="90" rx="4"/><path d="M150 290 h46 v -14 h-46 z"/><rect x="163" y="310" width="20" height="20" fill="#ffe2a0" opacity="0.7"/>
+<rect x="1000" y="270" width="46" height="100" rx="4"/><path d="M1000 270 h46 v -14 h-46 z"/><rect x="1013" y="292" width="20" height="20" fill="#ffe2a0" opacity="0.7"/>
+</g>
+<circle cx="186" cy="320" r="30" fill="url(#clamp2)"/>
+<circle cx="1036" cy="302" r="30" fill="url(#clamp2)"/>
+<g fill="#0b1220" opacity="0.85"><path d="M420 260 L600 140 L780 260 L780 340 L420 340 Z"/></g>
+<rect x="590" y="200" width="20" height="100" fill="#04060b"/>
+<rect y="440" width="1200" height="235" fill="url(#cfl2)"/>
+<g fill="#20293a" opacity="0.5"><circle cx="300" cy="520" r="3"/><circle cx="340" cy="540" r="3"/><circle cx="860" cy="510" r="3"/><circle cx="900" cy="535" r="3"/></g>
+</svg></div>`,
+  3: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="tsky3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#060911"/><stop offset="1" stop-color="#101a2c"/></linearGradient>
+<linearGradient id="tfl3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#131a28"/><stop offset="1" stop-color="#080b12"/></linearGradient>
+<radialGradient id="tglow3" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffcf8a" stop-opacity="0.9"/><stop offset="1" stop-color="#ffcf8a" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="675" fill="#080b13"/>
+<rect y="0" width="1200" height="420" fill="url(#tsky3)"/>
+<g fill="#0c1220"><path d="M0 360 L200 240 L400 360 Z"/><path d="M800 360 L1000 240 L1200 360 Z"/></g>
+<g fill="#5c1f22">
+<rect x="270" y="150" width="30" height="270" rx="4"/>
+<rect x="900" y="150" width="30" height="270" rx="4"/>
+<rect x="250" y="150" width="700" height="34" rx="6"/>
+<rect x="280" y="196" width="640" height="18" rx="4"/>
+</g>
+<g fill="#3c1214"><rect x="270" y="150" width="30" height="16"/><rect x="900" y="150" width="30" height="16"/></g>
+<g fill="#0c0e14"><path d="M420 420 L600 300 L780 420 Z"/></g>
+<rect x="150" y="300" width="14" height="120" fill="#101826"/>
+<rect x="140" y="270" width="34" height="40" rx="6" fill="#181022"/>
+<circle cx="157" cy="290" r="10" fill="#ffcf8a"/><circle cx="157" cy="290" r="34" fill="url(#tglow3)"/>
+<rect x="1040" y="300" width="14" height="120" fill="#101826"/>
+<rect x="1030" y="270" width="34" height="40" rx="6" fill="#181022"/>
+<circle cx="1047" cy="290" r="10" fill="#ffcf8a"/><circle cx="1047" cy="290" r="34" fill="url(#tglow3)"/>
+<rect x="330" y="420" width="540" height="16" rx="8" fill="#161f2e"/>
+<rect x="360" y="450" width="480" height="16" rx="8" fill="#131a28"/>
+<rect x="390" y="480" width="420" height="16" rx="8" fill="#0f1522"/>
+<rect y="470" width="1200" height="205" fill="url(#tfl3)"/>
+</svg></div>`,
+  4: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="hwall4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c130f"/><stop offset="1" stop-color="#2a1b14"/></linearGradient>
+<linearGradient id="hfl4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241811"/><stop offset="1" stop-color="#120c08"/></linearGradient>
+<radialGradient id="hglow4" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffdf9e" stop-opacity="0.9"/><stop offset="1" stop-color="#ffdf9e" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="675" fill="#1a120d"/>
+<rect y="0" width="1200" height="460" fill="url(#hwall4)"/>
+<g stroke="#3a281d" stroke-width="4"><line x1="0" y1="120" x2="1200" y2="120"/><line x1="0" y1="240" x2="1200" y2="240"/></g>
+<g fill="#120c08">
+<rect x="120" y="60" width="220" height="330" rx="4"/><rect x="430" y="60" width="220" height="330" rx="4"/><rect x="740" y="60" width="220" height="330" rx="4"/>
+</g>
+<g stroke="#2c1e15" stroke-width="3"><line x1="230" y1="60" x2="230" y2="390"/><line x1="540" y1="60" x2="540" y2="390"/><line x1="850" y1="60" x2="850" y2="390"/></g>
+<rect x="960" y="110" width="60" height="80" rx="6" fill="#150e0a"/>
+<path d="M960 110 h60 v-14 h-60 z" fill="#0c0805"/>
+<circle cx="990" cy="150" r="14" fill="#ffdf9e" opacity="0.85"/><circle cx="990" cy="150" r="44" fill="url(#hglow4)"/>
+<rect x="80" y="100" width="60" height="80" rx="6" fill="#150e0a"/>
+<path d="M80 100 h60 v-14 h-60 z" fill="#0c0805"/>
+<circle cx="110" cy="140" r="14" fill="#ffdf9e" opacity="0.85"/><circle cx="110" cy="140" r="44" fill="url(#hglow4)"/>
+<rect x="540" y="380" width="120" height="60" rx="6" fill="#0e0906"/>
+<rect x="560" y="330" width="80" height="60" rx="4" fill="#1a120c"/>
+<rect y="460" width="1200" height="215" fill="url(#hfl4)"/>
+<g stroke="#3a281d" stroke-width="2" opacity="0.6"><line x1="0" y1="520" x2="1200" y2="520"/><line x1="0" y1="580" x2="1200" y2="580"/><line x1="0" y1="640" x2="1200" y2="640"/></g>
+</svg></div>`,
+  5: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="dsky5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241a35"/><stop offset=".45" stop-color="#8a3f54"/><stop offset=".75" stop-color="#e08652"/><stop offset="1" stop-color="#f2b06a"/></linearGradient>
+<radialGradient id="dsun5" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffe6a8" stop-opacity="0.95"/><stop offset="1" stop-color="#ffe6a8" stop-opacity="0"/></radialGradient>
+<linearGradient id="dfl5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241a30"/><stop offset="1" stop-color="#120c1d"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="#241a35"/>
+<rect y="0" width="1200" height="440" fill="url(#dsky5)"/>
+<circle cx="600" cy="300" r="120" fill="url(#dsun5)"/>
+<g fill="#2a1c30" opacity="0.85">
+<rect x="480" y="180" width="30" height="280" rx="4"/>
+<rect x="690" y="180" width="30" height="280" rx="4"/>
+<rect x="460" y="180" width="280" height="30" rx="6"/>
+<rect x="475" y="226" width="250" height="16" rx="4"/>
+</g>
+<rect x="0" y="440" width="1200" height="235" fill="url(#dfl5)"/>
+<rect x="0" y="440" width="1200" height="8" fill="#140e1e"/>
+<path d="M0 440 q 300 -40 600 0 t 600 0" stroke="#150f1f" stroke-width="3" fill="none" opacity="0.6"/>
+<ellipse cx="600" cy="600" rx="360" ry="46" fill="#100b1c" opacity="0.7"/>
+</svg></div>`,
+  6: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="lsky6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a1c2e"/><stop offset=".4" stop-color="#6b3a3a"/><stop offset=".75" stop-color="#c97b3f"/><stop offset="1" stop-color="#f0b25f"/></linearGradient>
+<linearGradient id="lwater6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c97b3f"/><stop offset=".5" stop-color="#5a3a30"/><stop offset="1" stop-color="#241a1c"/></linearGradient>
+<radialGradient id="lsun6" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffedb0" stop-opacity="0.95"/><stop offset="1" stop-color="#ffedb0" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="675" fill="#241a2e"/>
+<rect y="0" width="1200" height="330" fill="url(#lsky6)"/>
+<circle cx="960" cy="220" r="60" fill="url(#lsun6)"/>
+<g fill="#241a24" opacity="0.6"><path d="M0 300 q 90 -40 180 -10 t 180 4 t 180 -14 t 180 8 v 40 H 0 Z"/></g>
+<rect y="300" width="1200" height="375" fill="url(#lwater6)"/>
+<g stroke="#f0b25f" stroke-width="3" opacity="0.4"><path d="M0 340 q 120 10 240 0 t 240 0 t 240 0 t 240 0 t 240 0"/><path d="M0 420 q 120 -10 240 0 t 240 0 t 240 0 t 240 0 t 240 0"/></g>
+<g>
+<ellipse cx="260" cy="400" rx="26" ry="10" fill="#ffdf9e" opacity="0.9"/><ellipse cx="260" cy="400" rx="46" ry="18" fill="#ffb25f" opacity="0.25"/>
+<ellipse cx="480" cy="450" rx="26" ry="10" fill="#ffdf9e" opacity="0.9"/><ellipse cx="480" cy="450" rx="46" ry="18" fill="#ffb25f" opacity="0.25"/>
+<ellipse cx="760" cy="420" rx="26" ry="10" fill="#ffdf9e" opacity="0.9"/><ellipse cx="760" cy="420" rx="46" ry="18" fill="#ffb25f" opacity="0.25"/>
+<ellipse cx="980" cy="470" rx="26" ry="10" fill="#ffdf9e" opacity="0.9"/><ellipse cx="980" cy="470" rx="46" ry="18" fill="#ffb25f" opacity="0.25"/>
+</g>
+<ellipse cx="600" cy="640" rx="520" ry="40" fill="#140d12" opacity="0.6"/>
+</svg></div>`
+};
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function plain(s) { return String(s).replace(/★([^★]*)★/g, '$1'); }
+function decorate(s) {
+  return esc(s).replace(/★([^★]*)★/g, '<span class="glos">$1</span>').replace(/★/g, '');
+}
+
+/* ---------- słówka użyte w opowieści (indeksy = k w scenach) ---------- */
+
+var VN_WORDS = [
+  { w:'気配',        r:'けはい', m:'presence; sign; indication; feeling that something is near' },
+  { w:'ひっそり',    r:'ひっそり', m:'quiet; still; hushed; stealthily' },
+  { w:'まさか',      r:'まさか', m:'by no means; surely not; never (with negative)' },
+  { w:'たちまち',    r:'たちまち', m:'in a moment; instantly; all of a sudden' },
+  { w:'うっかり',    r:'うっかり', m:'carelessly; thoughtlessly; inadvertently' },
+  { w:'そっと',      r:'そっと', m:'softly; gently; quietly; secretly' },
+  { w:'揺らぐ',      r:'ゆらぐ', m:'to shake; to sway; to waver; to flicker' },
+  { w:'かすか',      r:'かすか', m:'faint; dim; slight; vague' },
+  { w:'ふらふら',    r:'ふらふら', m:'unsteadily; aimlessly; waveringly' },
+  { w:'じっと',      r:'じっと', m:'motionlessly; fixedly; patiently' },
+  { w:'うろうろ',    r:'うろうろ', m:'wandering around; loitering; hanging about' },
+  { w:'だんだん',    r:'だんだん', m:'gradually; by degrees; little by little' },
+  { w:'まもなく',    r:'まもなく', m:'soon; shortly; before long' },
+  { w:'とうとう',    r:'とうとう', m:'finally; at last; in the end' },
+  { w:'やたら',      r:'やたら', m:'excessively; recklessly; at random' },
+  { w:'ぐったり',    r:'ぐったり', m:'exhausted; limply; done in' },
+  { w:'ばったり',    r:'ばったり', m:'unexpectedly (meeting someone); with a flop' },
+  { w:'ひょっと',    r:'ひょっと', m:'by any chance; possibly; accidentally' },
+  { w:'気づく',      r:'きづく', m:'to notice; to realize; to become aware' },
+  { w:'立ち尽くす',  r:'たちつくす', m:'to stand rooted to the spot; to stand transfixed' },
+  { w:'響く',        r:'ひびく', m:'to resound; to reverberate; to echo' },
+  { w:'薄気味悪い',  r:'うすきみわるい', m:'eerie; creepy; ominous' },
+  { w:'鳥肌',        r:'とりはだ', m:'goosebumps; gooseflesh' },
+  { w:'呆然',        r:'ぼうぜん', m:'stupefied; dumbfounded; stunned' },
+  { w:'儚い',        r:'はかない', m:'fleeting; transient; short-lived' }
+];
+
+/* ---------- opowieść ─ 「狐火の宮」(horror) ---------- */
+
+var CHAPTERS = [
+  {
+    bg:3, who:'', title:'祭りの夜', kana:'まつりのよる',
+    paras:[
+      { ja:'山道は、木々に囲まれ、提灯の灯りだけが、ぽつぽつと続いていた。', k:-1 },
+      { ja:'十年ぶりに帰ってきた、この村の夏祭り。──けれど、何かが違う★気配★がした。', k:0 },
+      { ja:'ポケットの中には、古い御守りが一つ。差出人のない封筒に入って、先週、届いたものだった。', k:-1 },
+      { ja:'「鈴が鳴ったら、宮へおいで。忘れ物を、返しにきなさい」──そう、細い字で書かれていた。', k:-1 },
+      { ja:'村は、★ひっそり★と静まり返っていた。祭りの太鼓の音さえ、聞こえてこない。', k:1 },
+      { ja:'★まさか★、祭りは、もう終わってしまったのだろうか。', k:2, fx:'flicker' },
+      { ja:'石段を上るたび、提灯の火が、風もないのに、揺れていた。', k:-1 },
+      { ja:'気づくと、後ろをついてくる足音が、一つ、増えていた。', k:-1, fx:'shake' }
+    ]
+  },
+  {
+    bg:3, who:'私', title:'御守り', kana:'おまもり',
+    paras:[
+      { ja:'御守りを開けると、中には、色あせた組紐と、小さな写真が入っていた。', k:-1 },
+      { ja:'写真には、十歳の私と、しずくが、鳥居の下で、並んで笑っている。', k:-1 },
+      { ja:'しずくは、あの夏、この村で出会った、たった一人の友達だった。', k:-1 },
+      { ja:'★たちまち★、あの日の記憶が、頭の中に、よみがえってきた。', k:3 },
+      { ja:'私は、★うっかり★、彼女との約束を、十年間、忘れていた。', k:4 },
+      { ja:'「必ず、迎えに来る」──その約束を、果たさないまま。', k:-1 },
+      { ja:'御守りの紐を、★そっと★、指でなぞった。──結び目が、まだ、あの日のままだった。', k:5 }
+    ]
+  },
+  {
+    bg:2, who:'', title:'鳥居', kana:'とりい',
+    paras:[
+      { ja:'石段の先に、大きな鳥居が、ぼんやりと浮かび上がった。', k:-1 },
+      { ja:'鳥居には、太い注連縄が、幾重にも巻きつけられている。──まるで、何かを、閉じ込めるように。', k:-1 },
+      { ja:'灯籠の火だけが、消えずに、灯っていた。', k:-1 },
+      { ja:'鳥居の柱が、かすかに、★揺らぐ★のが見えた。──目の錯覚だと、思いたかった。', k:6 },
+      { ja:'注連縄の向こうから、鈴の音が、★かすか★に、聞こえてくる。', k:7, fx:'flicker' },
+      { ja:'私は、★ふらふら★と、鳥居に近づいていった。', k:8 },
+      { ja:'鈴の音は、注連縄をくぐった瞬間、ぴたりと止んだ。', k:-1, fx:'flash' },
+      { ja:'鳥居の奥には、狐の像が、二つ。──どちらも、顔が、削り取られていた。', k:-1 }
+    ]
+  },
+  {
+    bg:0, who:'', title:'拝殿', kana:'はいでん',
+    paras:[
+      { ja:'拝殿の扉は、開いたままだった。中は、真っ暗だ。', k:-1 },
+      { ja:'私は、★じっと★、闇の中に、目を凝らした。', k:9 },
+      { ja:'奥の壁に、無数の千羽鶴と、色あせた写真が、貼られていた。──全部、しずくの写真だった。', k:-1, fx:'flash' },
+      { ja:'白い装束の、老いた巫女が、いつの間にか、私の後ろに立っていた。', k:-1 },
+      { ja:'「よく来たね。十年、待っていたよ」──声は、しわがれていたが、優しかった。', k:-1 },
+      { ja:'「しずくちゃんは、あの祭りの夜、境内を★うろうろ★していてね」', k:10 },
+      { ja:'「狐火を追いかけて、鎮守の池のほうへ、走っていったんだ」', k:-1 },
+      { ja:'「それきり、誰も、あの子を見ていない」──巫女は、静かに、目を伏せた。', k:-1 },
+      { ja:'私の膝が、★だんだん★、震え始めた。', k:11 },
+      { ja:'「あなたが、最後に、あの子と、話した人だから」──巫女は、私を、本殿の奥へと促した。', k:-1 }
+    ]
+  },
+  {
+    bg:6, who:'', title:'灯籠流しの記憶', kana:'とうろうながしのきおく',
+    paras:[
+      { ja:'気がつくと、私は、十歳の姿で、池のほとりに立っていた。', k:-1 },
+      { ja:'灯籠流しの夜だった。無数の灯籠が、水面を、静かに流れていく。', k:-1 },
+      { ja:'隣には、しずくがいた。──小さな狐のお面をかぶって、楽しそうに笑っている。', k:-1 },
+      { ja:'「ねえ、狐火、見たことある？　うちのおばあちゃんが言ってたの」', k:-1 },
+      { ja:'★まもなく★、木立の奥に、青白い火が、ふわりと現れた。', k:12 },
+      { ja:'しずくは、お面を外すと、迷わず、その光のほうへ、駆け出していった。', k:-1 },
+      { ja:'「待って」──私は、★とうとう★、その声を、しずくに届けることができなかった。', k:13 },
+      { ja:'彼女の背中は、★やたら★遠く、闇の奥へ、吸い込まれていった。', k:14, fx:'shake' },
+      { ja:'水面の灯籠が、一斉に、揺れる音がした。──それきり、しずくの姿は、消えた。', k:-1 },
+      { ja:'私は、池のほとりで、しずくの名前を、何度も呼び続けた。', k:-1, fx:'shake' },
+      { ja:'けれど、返事の代わりに、鈴の音だけが、遠くで、鳴っていた。', k:-1, fx:'flash' }
+    ]
+  },
+  {
+    bg:4, who:'', title:'本殿', kana:'ほんでん',
+    paras:[
+      { ja:'気づくと、私は、また、拝殿の前に立っていた。', k:-1 },
+      { ja:'巫女は、★ぐったり★とした様子で、壁に、寄りかかっていた。', k:15 },
+      { ja:'「思い出したかい。──あの子は、まだ、境内のどこかにいるんだよ」', k:-1 },
+      { ja:'本殿の扉を開けると、狐のお面をかぶった、小さな影が、そこに立っていた。', k:-1, fx:'flash' },
+      { ja:'「★ばったり★会えたね」──お面の下から、聞き覚えのある声がした。', k:16 },
+      { ja:'しずくは、お面を、ゆっくりと外した。──その顔は、十年前のまま、幼かった。', k:-1 },
+      { ja:'「私のこと、覚えている？」──しずくは、★ひょっと★すると、忘れられているかもしれないと、不安そうだった。', k:17 },
+      { ja:'「ずっと、鳥居の向こうで、君を待っていたんだ」', k:-1 },
+      { ja:'私は、彼女の姿を見て、ようやく★気づい★た。──足元に、影がない。', k:18 },
+      { ja:'「本当のことを、言ってもいい？」──しずくは、少し笑って、続けた。', k:-1 }
+    ],
+    choice: {
+      paras:[ { ja:'「あの夜、狐火を追いかけたのは……君を、置いていきたくなかったからなんだ」', k:-1, fx:'shake' } ],
+      options:[
+        { label:'── ありがとう。もう、大丈夫だよ', toNote:'私の声は、ようやく、まっすぐ届いた。──何かが、すっと軽くなった。' },
+        { label:'── ごめん……ずっと、捜しに来られなかった', toNote:'それが、精一杯の、本当の言葉だった。──指先が、冷たく震えていた。' }
+      ]
+    }
+  },
+  {
+    bg:4, who:'', title:'別れ', kana:'わかれ',
+    paras:[
+      { ja:'しずくは、静かに笑った。', k:-1 },
+      { ja:'',  k:-1, variants:[
+          '「うん──そう言うなら、私は、もう行けるよ」その声は、どこか安心したように、軽かった。',
+          '「そう……なら、私も、もう少しだけ、ここにいようかな」その声は、どこか寂しそうに、揺れていた。'
+        ] },
+      { ja:'扉を閉めると、本殿の灯りは、ひとつだけ残っていた。──けれど、そこに、しずくの姿は、もうなかった。', k:-1, fx:'flash' }
+    ]
+  },
+  {
+    bg:1, who:'', title:'帰り道', kana:'かえりみち',
+    paras:[
+      { ja:'帰り道、雨が、ぽつぽつと降り始めた。', k:-1 },
+      { ja:'私は、鳥居を振り返った。──狐の像の顔は、いつの間にか、元に戻っていた。', k:-1 },
+      { ja:'境内の隅々に、白い装束の人影が、★立ち尽くし★ていた。', k:19, fx:'flash' },
+      { ja:'「あの人たちも、あの夏から、ずっと、ここに残っていたんだ」──巫女の声が、雨の合間に聞こえた。', k:-1 },
+      { ja:'「十年間、あなたの夢に★響い★ていた、あの鈴の音──それが、今夜の、最後の呼び声だ」', k:20 },
+      { ja:'雨に濡れた石段は、★薄気味悪い★ほど、静かだった。', k:21 },
+      { ja:'私の腕に、★鳥肌★が立った。──あの夏、池に消えたのは、しずくだけじゃなかった。', k:22 },
+      { ja:'★呆然★としたまま、私は、もう一つの事実に、気づいてしまった。', k:23, fx:'shake' }
+    ]
+  },
+  {
+    bg:5, who:'', title:'終わりの社', kana:'おわりのやしろ',
+    paras:[
+      { ja:'境内の灯籠が、一斉に、あの夏祭りの夜の色へ、変わった。', k:-1 },
+      { ja:'鳥居の向こうの空は、★儚い★ほど、白く、明るんでいた。', k:24 },
+      { ja:'「あの夏、池に消えたのは、しずくだけじゃなかった。──あなたも、いっしょだ」声は、十年前の巫女のままだった。', k:-1, fx:'flash' },
+      { ja:'私は、ポケットから御守りを取り出し、鳥居の根元に、そっと置いた。返す物は、もう、返せたから。', k:-1 },
+      { ja:'狐火たちが、鳥居の向こうで、手招きするように、揺れていた。', k:-1 },
+      { ja:'鈴の音が、最後に、一度だけ、静かに響いた。「──さようなら。また、いつか」', k:-1 },
+      { ja:'', k:-1, variants:[
+          '私は、鳥居をくぐり、夜明けの道へ、そっと歩き出した。振り返ると、そこにはもう、宮の影も、しずくの姿もなかった。──朝の光が、静かに村を包んでいった。',
+          '私は、鳥居をくぐらず、その場に立ち尽くすことにした。──宮の灯りは、今夜も、誰かを待つように、消えずに灯り続けている。'
+        ] }
+    ]
+  }
+];
+
+var ENDINGS = [
+  { title:'夜明け', sub:'よあけ — Epilog', body:'Odpuściłeś przeszłość i przekroczyłeś bramę torii o świcie. Wspomnienia o tamtym lecie gasną razem z lisimi ognikami, a Ty wracasz do swojego życia — bez ciężaru złożonej niegdyś obietnicy.' },
+  { title:'狐火の宮', sub:'きつねびのみや — Epilog', body:'Nie potrafiłeś przejść przez bramę. Mówi się, że w bezksiężycowe noce wciąż widać samotną postać czuwającą przy torii, otoczoną błędnymi ognikami — czekającą na powrót przyjaciółki, który nigdy nie nadejdzie.' }
+];
+
+var SCENES = [];
+var story = null;
+
+function cloneP(p) {
+  var c = { ja:p.ja, k:p.k };
+  if (p.fx) c.fx = p.fx;
+  if (p.variants) c.variants = p.variants.slice();
+  return c;
+}
+
+function buildScenes() {
+  SCENES = [];
+  CHAPTERS.forEach(function (ch, idx) {
+    ch.paras.forEach(function (p, pi) {
+      SCENES.push({
+        bg: ch.bg, who: p.who != null ? p.who : ch.who, para: cloneP(p),
+        chapterStart: pi === 0, chapterTitle: ch.title, chapterKana: ch.kana, chapterNum: idx + 1
+      });
+    });
+    if (ch.choice) {
+      SCENES.push({
+        bg: ch.bg, who: ch.who, para: cloneP(ch.choice.paras[0]), end: true,
+        choices: ch.choice.options.map(function (o) { return { label: o.label, note: o.toNote }; })
+      });
+    }
+  });
+  return SCENES;
+}
+
+function start() {
+  document.getElementById('overlay').classList.add('hide');
+  story = { s: 0, choice: null, over: false };
+  dots();
+  showScene();
+}
+
+function dots() {
+  var box = document.getElementById('dots');
+  box.innerHTML = '';
+  var N = SCENES.length;
+  if (!N) return;
+  var seg = Math.max(1, Math.round(N / 22));
+  var active = Math.floor(Math.min(story.s, N - 1) / seg);
+  var count = Math.ceil(N / seg);
+  for (var i = 0; i < count; i++) {
+    var d = document.createElement('span');
+    d.className = 'dot' + (i === active ? ' on' : '');
+    box.appendChild(d);
+  }
+}
+
+var typing = null, skipped = false, doneTyping = false;
+
+function stopTyping() { if (typing) { clearInterval(typing); typing = null; } }
+
+function fullHtml() {
+  var para = SCENES[story.s].para;
+  return decorate(para.ja);
+}
+function rawJa() { return plain(SCENES[story.s].para.ja); }
+
+function typeJa() {
+  var el = document.getElementById('ja');
+  el.innerHTML = ''; doneTyping = false;
+  document.getElementById('cnext').classList.remove('pulse');
+  var text = rawJa();
+  if (skipped) { el.innerHTML = fullHtml(); finishLine(); return; }
+  var i = 0;
+  typing = setInterval(function () {
+    i++;
+    el.innerHTML = esc(text.slice(0, i));
+    if (i >= text.length) { stopTyping(); el.innerHTML = fullHtml(); finishLine(); }
+  }, 34);
+}
+
+function finishLine() { doneTyping = true; chips(); document.getElementById('cnext').classList.add('pulse'); }
+
+function chips() {
+  var box = document.getElementById('chips');
+  box.innerHTML = '';
+  var para = SCENES[story.s].para;
+  if (!para || para.k == null || para.k < 0) return;
+  var w = VN_WORDS[para.k];
+  if (!w) return;
+  var c = document.createElement('span');
+  c.className = 'chip';
+  c.textContent = w.w;
+  c.onclick = function (e) { e.stopPropagation(); openGloss(para.k); };
+  box.appendChild(c);
+}
+
+function openGloss(k) {
+  var box = document.getElementById('glist');
+  var layer = document.getElementById('gloss');
+  box.innerHTML = '';
+  var w = VN_WORDS[k];
+  if (!w) { layer.classList.remove('show'); return; }
+  var d = document.createElement('div');
+  d.innerHTML = '<span class="gw">' + esc(w.w) + '</span><span class="gk">' + esc(w.r) + '</span>' +
+    '<div class="gm">' + esc(w.m) + '</div>';
+  box.appendChild(d);
+  layer.classList.add('show');
+  speak(w.w + '。' + w.r);
+}
+
+function triggerFx(fx) {
+  var stage = document.getElementById('stage');
+  var flash = document.getElementById('flash');
+  if (fx === 'shake') {
+    stage.classList.remove('fx-shake'); void stage.offsetWidth; stage.classList.add('fx-shake');
+  } else if (fx === 'flash') {
+    flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+  } else if (fx === 'flicker') {
+    stage.classList.remove('fx-flicker'); void stage.offsetWidth; stage.classList.add('fx-flicker');
+  }
+}
+
+function advance() {
+  if (!story || story.over) return;
+  var gloss = document.getElementById('gloss');
+  if (gloss.classList.contains('show')) return;
+  var sc = SCENES[story.s];
+  if (typing) { skipped = true; stopTyping(); typeJa(); return; }
+  if (!doneTyping) { skipped = true; typeJa(); return; }
+  if (sc.end && sc.choices) { showChoices(); return; }
+  if (story.s + 1 < SCENES.length) { story.s++; skipped = false; showScene(); }
+  else { showEnding(); }
+}
+
+function applyChoice(idx) {
+  story.choice = idx;
+  for (var i = story.s + 1; i < SCENES.length; i++) {
+    var p = SCENES[i].para;
+    if (p && p.variants) { p.ja = p.variants[idx]; delete p.variants; }
+  }
+}
+
+function showChapterCard(sc, then) {
+  var card = document.getElementById('chapterCard');
+  card.innerHTML = '<div><div class="num">第' + sc.chapterNum + '章</div>' +
+    '<div class="kt"><ruby>' + esc(sc.chapterTitle) + '<rt>' + esc(sc.chapterKana) + '</rt></ruby></div>' +
+    '<div class="line"></div></div>';
+  card.classList.add('show');
+  setTimeout(function () {
+    card.classList.remove('show');
+    setTimeout(then, 900);
+  }, 1500);
+}
+
+function showScene() {
+  var sc = SCENES[story.s];
+  var mbox = document.getElementById('mbox');
+  function render() {
+    mbox.classList.add('show');
+    mbox.classList.remove('in');
+    document.getElementById('choices').classList.remove('show');
+    document.getElementById('who').textContent = sc.who || '';
+    setBg(sc.bg || 0);
+    skipped = false;
+    requestAnimationFrame(function () { mbox.classList.add('in'); });
+    typeJa();
+    dots();
+    if (sc.para && sc.para.fx) setTimeout(function () { triggerFx(sc.para.fx); }, 120);
+  }
+  if (sc.chapterStart) { mbox.classList.remove('show'); showChapterCard(sc, render); }
+  else render();
+}
+
+function showChoices() {
+  var sc = SCENES[story.s];
+  var box = document.getElementById('choices');
+  box.innerHTML = '';
+  var items = sc.choices || [{ label:'次へ ▸', note:null }];
+  items.forEach(function (ch, i) {
+    var b = document.createElement('button');
+    b.className = 'choice';
+    b.textContent = ch.label;
+    b.onclick = function () {
+      box.classList.remove('show');
+      applyChoice(i);
+      if (ch.note) {
+        var cur = SCENES[story.s];
+        SCENES.splice(story.s + 1, 0, { bg: cur.bg, who: cur.who, para: { ja: ch.note, k:-1 } });
+      }
+      if (story.s + 1 < SCENES.length) { story.s++; skipped = false; showScene(); }
+      else showEnding();
+    };
+    box.appendChild(b);
+  });
+  box.classList.add('show');
+}
+
+function showEnding() {
+  story.over = true;
+  document.getElementById('mbox').classList.remove('show');
+  document.getElementById('choices').classList.remove('show');
+  var idx = story.choice != null ? story.choice : 0;
+  var end = ENDINGS[idx];
+  var overlay = document.getElementById('overlay');
+  document.getElementById('cardInner').innerHTML =
+    '<h1>' + esc(end.title) + ' <span>— ' + esc(end.sub) + '</span></h1>' +
+    '<p>' + esc(end.body) + '</p>' +
+    '<button class="btn" id="btnRestart">▶ もう一度 — Zagraj ponownie</button>';
+  overlay.classList.remove('hide');
+  document.getElementById('btnRestart').addEventListener('click', function () {
+    buildScenes();
+    start();
+  });
+}
+
+function setBg(k) {
+  if (k < 0 || k >= BG_CLASSES.length) k = BG_CLASSES.length - 1;
+  var layer = document.getElementById('bgLayer');
+  var bg = BACKGROUNDS[k];
+  var div = document.createElement('div');
+  div.className = 'bg ' + bg.cls + ' on';
+  div.innerHTML = BG_DECOR[k] || '';
+  if (bg.fireflies) {
+    var fbox = document.createElement('div');
+    fbox.className = 'fireflies';
+    var n = 10 + Math.floor(Math.random() * 6);
+    for (var i = 0; i < n; i++) {
+      var f = document.createElement('span');
+      f.className = 'firefly';
+      f.style.left = (5 + Math.random() * 90) + '%';
+      f.style.top = (15 + Math.random() * 65) + '%';
+      var dur = (3 + Math.random() * 3).toFixed(2);
+      var fdur = (2 + Math.random() * 2.5).toFixed(2);
+      f.style.animationDuration = dur + 's, ' + fdur + 's';
+      f.style.animationDelay = (Math.random() * 3).toFixed(2) + 's, ' + (Math.random() * 3).toFixed(2) + 's';
+      fbox.appendChild(f);
+    }
+    div.appendChild(fbox);
+  }
+  layer.appendChild(div);
+  [].slice.call(layer.children).forEach(function (c) {
+    if (c !== div) { c.classList.remove('on'); setTimeout(function(){ if (c.parentNode) c.parentNode.removeChild(c); }, 1500); }
+  });
+}
+
+function speak(text) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text.replace(/<[^>]*>/g, ''));
+    u.lang = 'ja-JP'; u.rate = 0.85;
+    var v = window.speechSynthesis.getVoices().filter(function (x) { return /ja/i.test(x.lang); })[0];
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+document.getElementById('cnext').addEventListener('click', advance);
+document.getElementById('ja').addEventListener('click', advance);
+document.getElementById('cspeak').addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (story) speak(rawJa());
+});
+document.getElementById('gclose').addEventListener('click', function () {
+  document.getElementById('gloss').classList.remove('show');
+  window.speechSynthesis.cancel();
+});
+document.getElementById('btnStart').addEventListener('click', function () {
+  buildScenes();
+  start();
+});
+document.addEventListener('keydown', function (e) {
+  if (e.code === 'Escape') {
+    document.getElementById('gloss').classList.remove('show');
+    return;
+  }
+  if (e.code === 'Space' || e.code === 'Enter') {
+    e.preventDefault();
+    var overlay = document.getElementById('overlay');
+    if (!overlay.classList.contains('hide')) {
+      var startBtn = document.getElementById('btnStart');
+      var restartBtn = document.getElementById('btnRestart');
+      if (restartBtn) restartBtn.click(); else startBtn.click();
+      return;
+    }
+    advance();
+  }
+});
+
+buildScenes();
+</script>
+</body>
+</html>

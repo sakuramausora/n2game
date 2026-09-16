@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>最終展示 — visual novel N2+</title>
+<style>
+  :root {
+    --bg:#0e1018; --ink:#eceaf6; --dim:#a8a7bd; --accent:#e63946; --gold:#f4b942;
+    --panel:rgba(20,22,34,.94); --line:rgba(255,255,255,.09);
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; height:100%; overflow:hidden; }
+  body {
+    background:#0e1018; color:var(--ink);
+    font-family:"Segoe UI",-apple-system,"Yu Gothic UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  }
+  #stage {
+    position:fixed; inset:0; z-index:0;
+    background:#0e1018;
+    transition:background 1.2s ease;
+  }
+  #stage.fx-shake { animation:shake .45s cubic-bezier(.36,.07,.19,.97) both; }
+  #stage.fx-flicker { animation:flicker 1.1s steps(12) both; }
+  @keyframes shake {
+    10%,90% { transform:translate3d(-1px,0,0); }
+    20%,80% { transform:translate3d(2px,0,0); }
+    30%,50%,70% { transform:translate3d(-4px,0,0); }
+    40%,60% { transform:translate3d(4px,0,0); }
+  }
+  @keyframes flicker {
+    0%,19%,21%,23%,55%,57%,100% { opacity:1; filter:brightness(1); }
+    20%,22%,56% { opacity:.35; filter:brightness(2.2); }
+  }
+  #flash { position:fixed; inset:0; z-index:35; background:#fff; opacity:0; pointer-events:none; }
+  #flash.go { animation:flashpop .35s ease-out; }
+  @keyframes flashpop { 0% { opacity:0; } 8% { opacity:.85; } 100% { opacity:0; } }
+
+  .vignette { position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,.55) 100%); }
+  .grain { position:fixed; inset:0; z-index:2; pointer-events:none; opacity:.05;
+    background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.6) 0 1px,transparent 1px 3px); }
+
+  .bg { position:absolute; inset:0; overflow:hidden; opacity:0; transition:opacity 1.4s ease; }
+  .bg.on { opacity:1; }
+  .bg::after { content:""; position:absolute; inset:0; }
+
+  .night { background:linear-gradient(180deg,#060810 0%,#0a0f1d 55%,#12192c 100%); }
+  .rain { background:linear-gradient(180deg,#04060c 0%,#0a1018 60%,#0c0e12 100%); }
+  .station { background:linear-gradient(180deg,#0b0f1c 0%,#151c2e 55%,#0b0e18 100%); }
+  .train { background:linear-gradient(180deg,#070a14 0%,#0e141f 55%,#070a12 100%); }
+  .hospital { background:linear-gradient(180deg,#0d0b16 0%,#161226 60%,#0a0812 100%); }
+  .twilight { background:linear-gradient(180deg,#1b2333 0%,#667798 40%,#cdb8a8 78%,#efe0cf 100%); }
+  .river { background:linear-gradient(180deg,#1a0e0a 0%,#261310 55%,#120807 100%); }
+
+  .bg svg { position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  .particles { position:absolute; inset:0; pointer-events:none; }
+  .mote { position:absolute; width:2px; height:2px; border-radius:50%; background:#e8f0ff;
+    opacity:.0; box-shadow:0 0 4px 1px rgba(210,225,255,.35);
+    animation:mdrift linear infinite; }
+  @keyframes mdrift {
+    0%   { transform:translate(0,10px); opacity:0; }
+    12%  { opacity:.5; }
+    50%  { transform:translate(-12px,-24px); opacity:.35; }
+    88%  { opacity:.12; }
+    100% { transform:translate(6px,-44px); opacity:0; }
+  }
+  .firefly { position:absolute; width:3px; height:3px; border-radius:50%; background:#dceeff;
+    box-shadow:0 0 6px 2px rgba(180,215,255,.85), 0 0 14px 5px rgba(160,200,255,.25);
+    animation-name:ffloat, fflicker; animation-timing-function:ease-in-out, ease-in-out;
+    animation-iteration-count:infinite, infinite; }
+  @keyframes ffloat {
+    0% { transform:translate(0,0); }
+    22% { transform:translate(16px,-22px); }
+    48% { transform:translate(-12px,-38px); }
+    74% { transform:translate(-26px,-10px); }
+    100% { transform:translate(8px,4px); }
+  }
+  @keyframes fflicker {
+    0%,100% { opacity:.12; }
+    12% { opacity:.9; }
+    30% { opacity:.3; }
+    50% { opacity:1; }
+    70% { opacity:.2; }
+    88% { opacity:.75; }
+  }
+
+  #chapterCard { position:fixed; inset:0; z-index:32; display:flex; align-items:center; justify-content:center;
+    background:#05060a; opacity:0; pointer-events:none; transition:opacity .9s ease; text-align:center; padding:20px; }
+  #chapterCard.show { opacity:1; }
+  #chapterCard .num { color:var(--gold); font-size:13px; letter-spacing:4px; margin-bottom:14px; opacity:.8; }
+  #chapterCard .kt { font-size:38px; letter-spacing:2px; }
+  #chapterCard ruby rt { font-size:14px; color:var(--dim); letter-spacing:0; }
+  #chapterCard .line { width:46px; height:1px; background:var(--accent); margin:18px auto 0; opacity:.7; }
+
+  #ui {
+    position:fixed; left:0; right:0; bottom:0; z-index:10;
+    padding:0 16px 16px;
+  }
+  #mbox {
+    max-width:860px; margin:0 auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:16px 20px 14px; backdrop-filter:blur(6px);
+    min-height:120px; box-shadow:0 -8px 40px rgba(0,0,0,.5);
+    display:none; opacity:0; transform:translateY(8px);
+    transition:opacity .4s ease, transform .4s ease;
+  }
+  #mbox.show { display:block; }
+  #mbox.in { opacity:1; transform:translateY(0); }
+  #who { display:block; font-size:12px; color:var(--gold); letter-spacing:1px;
+    text-transform:uppercase; margin-bottom:4px; min-height:16px; }
+  #ja { font-size:23px; line-height:1.7; letter-spacing:.5px; min-height:76px; cursor:pointer; }
+  #ja .glos { color:var(--gold); }
+  #bar { display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  #chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { background:rgba(244,185,66,.12); border:1px solid rgba(244,185,66,.35); color:var(--gold);
+    padding:2px 10px; border-radius:999px; font-size:13px; cursor:pointer; animation:chippop .5s ease; }
+  @keyframes chippop { from { transform:scale(.7); opacity:0; } to { transform:scale(1); opacity:1; } }
+  #chillg { display:inline-flex; align-items:center; gap:3px; font-size:13px; color:var(--dim);
+    border:1px solid var(--line); border-radius:999px; padding:4px 10px; }
+  #chillg b { font-weight:normal; margin-right:4px; }
+  #chillg i { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.12); display:inline-block; }
+  #chillg i.on { background:var(--accent); box-shadow:0 0 8px rgba(230,57,70,.7); }
+  .tool { background:transparent; border:1px solid var(--line); color:var(--dim); border-radius:999px;
+    padding:6px 11px; cursor:pointer; font-size:13px; font-family:inherit; }
+  .tool:hover { border-color:var(--gold); color:var(--ink); }
+  .tool.act { color:var(--gold); border-color:rgba(244,185,66,.55); }
+  #cnext { margin-left:auto; background:var(--accent); border:0; color:#fff; border-radius:999px;
+    padding:8px 18px; font-size:15px; cursor:pointer; font-family:inherit; }
+  #cnext.pulse { animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(230,57,70,.5); } 50% { box-shadow:0 0 0 7px rgba(230,57,70,0); } }
+  #cspeak, #csound { background:transparent; border:1px solid var(--line); color:var(--ink); border-radius:999px;
+    padding:8px 12px; cursor:pointer; font-size:15px; }
+  #csound.muted { opacity:.45; }
+
+  #choices { max-width:860px; margin:14px auto 0; display:none; gap:10px; }
+  #choices.show { display:flex; flex-wrap:wrap; }
+  .choice { background:rgba(255,255,255,.05); border:1px solid var(--line); color:var(--ink);
+    padding:12px 18px; border-radius:12px; cursor:pointer; font-family:inherit; font-size:15px;
+    transition:border-color .15s, background .15s; }
+  .choice:hover { border-color:var(--gold); background:rgba(244,185,66,.08); }
+
+  #dots { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:20;
+    display:flex; gap:5px; }
+  .dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.14);
+    transition:background .3s; }
+  .dot.on { background:var(--gold); }
+
+  #overlay { position:fixed; inset:0; z-index:40; background:rgba(8,10,16,.97);
+    display:flex; align-items:center; justify-content:center; padding:18px; overflow:auto; }
+  #overlay.hide { display:none; }
+  .card { max-width:620px; width:100%; background:#171b2a; border:1px solid var(--line);
+    border-radius:16px; padding:24px; }
+  .card h1 { margin:0 0 4px; font-size:24px; }
+  .card h1 span { color:var(--accent); }
+  .card p { color:var(--dim); line-height:1.7; margin-top:10px; }
+  .card .hint { font-size:13px; color:var(--dim); opacity:.75; margin-top:14px; }
+  .btn { border:0; border-radius:999px; padding:12px 20px; font-size:16px; cursor:pointer;
+    font-family:inherit; margin-top:14px; background:var(--gold); color:#171006; }
+  .btn.ghost { background:transparent; border:1px solid var(--line); color:var(--ink); margin-left:8px; }
+  .uned { margin-top:14px; font-size:13px; color:var(--dim); }
+  .uned b { color:var(--gold); }
+  .uned i { font-style:normal; color:var(--accent); }
+
+  #gloss { position:fixed; left:0; right:0; bottom:0; top:0; z-index:30; display:none;
+    align-items:flex-end; justify-content:center; background:rgba(6,8,14,.6); }
+  #gloss.show { display:flex; }
+  .gsheet { max-width:560px; width:96%; background:#171b2a; border:1px solid var(--line);
+    border-radius:16px 16px 0 0; padding:18px 20px 24px; max-height:60vh; overflow:auto; }
+  .gw { font-size:26px; }
+  .gk { color:var(--dim); margin-left:10px; font-size:18px; }
+  .gm { color:var(--gold); margin-top:6px; font-size:15px; line-height:1.5; }
+  .gclose { float:right; background:transparent; border:0; color:var(--dim); font-size:22px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="bgLayer"></div></div>
+<div class="vignette"></div><div class="grain"></div>
+<div id="flash"></div>
+<div id="dots"></div>
+<div id="chapterCard"></div>
+
+<div id="ui">
+  <div id="mbox">
+    <div id="who"></div>
+    <div id="ja"></div>
+    <div id="bar">
+      <span id="chillg" title="この夜、立ち止まった回数"><b>夜の冷え</b><i></i><i></i><i></i></span>
+      <div id="chips"></div>
+      <button class="tool" id="cspeed" title="文字速度">文:ふつう</button>
+      <button class="tool" id="cauto" title="自動で進める">▶自動</button>
+      <button id="csound" title="音楽 on/off">🔈</button>
+      <button id="cspeak" title="読む">🔊</button>
+      <button id="cnext">次へ ▸</button>
+    </div>
+  </div>
+  <div id="choices"></div>
+</div>
+
+<div id="gloss"><div class="gsheet"><button class="gclose" id="gclose">×</button><div id="glist"></div></div></div>
+
+<div id="overlay">
+  <div class="card" id="cardInner">
+    <h1>最終展示 <span>— ホラー・N2+</span></h1>
+    <p>Kolejna horrorowa powieść wizualna po japońsku. Tym razem: tygodniowa nocna zmiana w starym domu towarowym, który zamyka się po 60 latach. Reguła jest tylko jedna — po północy nie wolno się zatrzymywać.</p>
+    <p>Zapożyczone słówka zapalają się na złoto. Kliknij chip, żeby zobaczyć czytanie i znaczenie. Dodatkowo: zapis postępu (kontynuacja zapamięta to, co już przeczytałeś), wybór tempa tekstu, tryb automatyczny i trzy różne zakończenia zależne od wyborów.</p>
+    <p class="hint">Wskazówka: końcowe sceny i napisy są po japońsku — trzymają się języka historii.</p>
+    <button class="btn" id="btnStart">▶ 始める — Rozpocznij</button><button class="btn ghost" id="btnResume" style="display:none">続きから — Kontynuuj</button>
+    <div class="uned" id="unl"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+var KEY = 'vn.saishu.tenji.v2';
+var BG_CLASSES = ['night','rain','station','train','hospital','twilight','river'];
+
+var BACKGROUNDS = [
+  { cls:'night',    name:'shopfront', particles:'none' },
+  { cls:'rain',     name:'warehouse', particles:'dust' },
+  { cls:'station',  name:'entrance',  particles:'dust' },
+  { cls:'train',    name:'sales-floor-corridor', particles:'dust' },
+  { cls:'hospital', name:'family-hall', particles:'fireflies' },
+  { cls:'twilight', name:'dawn-street', particles:'none' },
+  { cls:'river',    name:'guard-office', particles:'dust' }
+];
+
+var BG_DECOR = {
+  0: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="f0sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#060810"/><stop offset="1" stop-color="#0c1322"/></linearGradient>
+<linearGradient id="f0wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#12182a"/><stop offset="1" stop-color="#0a0e1a"/></linearGradient>
+<linearGradient id="f0lit" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a3350"/><stop offset="1" stop-color="#141a2c"/></linearGradient>
+<radialGradient id="f0glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffe0a0" stop-opacity="0.95"/><stop offset="1" stop-color="#ffe0a0" stop-opacity="0"/></radialGradient>
+<linearGradient id="f0glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2440" stop-opacity="0.7"/><stop offset="1" stop-color="#0c111f" stop-opacity="0.9"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="#060810"/>
+<rect y="0" width="1200" height="400" fill="url(#f0sky)"/>
+<g fill="#0d1526">
+<rect x="120" y="180" width="180" height="80"/><rect x="480" y="150" width="220" height="90"/><rect x="820" y="170" width="200" height="86"/>
+<rect x="60" y="120" width="130" height="180"/><rect x="350" y="100" width="90" height="150"/>
+</g>
+<rect y="236" width="1200" height="360" fill="url(#f0wall)"/>
+<rect x="90" y="246" width="240" height="320" fill="url(#f0glass)" stroke="#1c2538" stroke-width="3"/>
+<rect x="420" y="246" width="360" height="320" fill="url(#f0glass)" stroke="#1c2538" stroke-width="4"/>
+<rect x="880" y="246" width="230" height="320" fill="url(#f0glass)" stroke="#1c2538" stroke-width="3"/>
+<g fill="#101827" opacity="0.9">
+<path d="M140 620 q 10 -60 8 -120 v -40 h 90 v 40 q -2 60 8 120 z"/>
+<path d="M150 440 q 3 -52 12 -80"/>
+<circle cx="156" cy="352" r="12" fill="#0d1320"/>
+</g>
+<g fill="#101827" opacity="0.9">
+<path d="M560 620 q 16 -70 10 -140 v -30 h 120 v 30 q -7 70 10 140 z"/>
+<path d="M590 420 q 5 -60 16 -92"/>
+<circle cx="602" cy="322" r="14" fill="#0d1320"/>
+</g>
+<g fill="#101827" opacity="0.9">
+<path d="M960 620 q 12 -58 10 -120 v -30 h 80 v 30 q -2 62 10 120 z"/>
+<path d="M970 452 q 6 -50 14 -78"/>
+<circle cx="982" cy="368" r="12" fill="#0d1320"/>
+</g>
+<path d="M300 246 L420 246 L360 300 Z" fill="#161c30"/>
+<path d="M780 246 L880 246 L830 300 Z" fill="#161c30"/>
+<path d="M0 596 h1200 v40 H0 Z" fill="#0b0f1c"/>
+<rect x="0" y="330" width="1200" height="6" fill="#0a0e18"/>
+<rect x="46" y="352" width="130" height="7" fill="#1e2738" rx="3.5"/>
+<rect x="660" y="352" width="130" height="7" fill="#1e2738" rx="3.5"/>
+<rect x="330" y="180" width="4" height="150" fill="#0d1220"/>
+<circle cx="332" cy="196" r="12" fill="#ffd98a"/><circle cx="332" cy="196" r="44" fill="url(#f0glow)"/>
+<rect x="740" y="180" width="4" height="150" fill="#0d1220"/>
+<circle cx="742" cy="196" r="12" fill="#ffd98a"/><circle cx="742" cy="196" r="44" fill="url(#f0glow)"/>
+<rect x="470" y="286" width="270" height="26" rx="4" fill="#0c1018"/>
+<rect x="480" y="292" width="250" height="14" rx="3" fill="#ffd98a" opacity="0.85"/>
+</svg></div>`,
+  1: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="w1wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a0f16"/><stop offset="1" stop-color="#10171f"/></linearGradient>
+<linearGradient id="w1fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1218"/><stop offset="1" stop-color="#06080c"/></linearGradient>
+<radialGradient id="w1bulb" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffe6b0" stop-opacity="0.9"/><stop offset="1" stop-color="#ffe6b0" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="675" fill="#070a10"/>
+<rect y="0" width="1200" height="90" fill="#0b1017"/>
+<g stroke="#131a24" stroke-width="8"><line x1="80" y1="0" x2="80" y2="90"/><line x1="1110" y1="0" x2="1110" y2="90"/></g>
+<path d="M590 0 h20 v60 h-20 z" fill="#151925"/>
+<rect x="584" y="56" width="32" height="12" rx="4" fill="#2a3350"/>
+<circle cx="600" cy="80" r="26" fill="#ffdf9e" opacity="0.35"/>
+<circle cx="600" cy="56" r="9" fill="#ffe6b0"/>
+<rect y="90" width="1200" height="360" fill="url(#w1wall)"/>
+<rect x="130" y="140" width="240" height="190" rx="8" fill="#0c121a"/>
+<rect x="130" y="140" width="240" height="18" fill="#0f1620"/>
+<g fill="#121a24"><rect x="160" y="180" width="50" height="46" rx="4"/><rect x="230" y="180" width="50" height="46" rx="4"/><rect x="300" y="180" width="50" height="46" rx="4"/><rect x="160" y="250" width="50" height="46" rx="4"/><rect x="230" y="250" width="50" height="46" rx="4"/></g>
+<rect x="860" y="120" width="240" height="210" rx="8" fill="#0c121a"/>
+<rect x="860" y="120" width="240" height="18" fill="#0f1620"/>
+<g fill="#171e28"><rect x="160" y="0" width="0" height="0"/><rect x="880" y="160" width="54" height="150"/></g>
+<rect x="420" y="150" width="20" height="300" fill="#0b1118"/>
+<rect x="440" y="150" width="20" height="300" fill="#0d1420"/>
+<rect x="520" y="150" width="20" height="300" fill="#0b1118"/>
+<rect x="560" y="150" width="20" height="300" fill="#0d1420"/>
+<rect x="700" y="150" width="20" height="300" fill="#0b1118"/>
+<rect x="760" y="150" width="20" height="300" fill="#0d1420"/>
+<path d="M120 450 q 200 -60 420 -26 t 460 -18 v 120 H120 Z" fill="#0c1118"/>
+<rect y="450" width="1200" height="225" fill="url(#w1fl)"/>
+<g stroke="#1a2330" stroke-width="2" opacity="0.7"><line x1="150" y1="540" x2="320" y2="540"/><line x1="520" y1="540" x2="720" y2="540"/><line x1="900" y1="540" x2="1060" y2="540"/></g>
+<rect x="200" y="600" width="24" height="20" fill="#0c1118"/>
+<circle cx="970" cy="580" r="8" fill="#232d3d" opacity="0.8"/>
+</svg></div>`,
+  2: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="e2wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10151f"/><stop offset="1" stop-color="#0a0e17"/></linearGradient>
+<linearGradient id="e2fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#151b28"/><stop offset="1" stop-color="#080b12"/></linearGradient>
+<radialGradient id="e2glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffdf9e" stop-opacity="0.85"/><stop offset="1" stop-color="#ffdf9e" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="675" fill="#0b0f18"/>
+<rect y="0" width="1200" height="430" fill="url(#e2wall)"/>
+<rect x="130" y="120" width="140" height="300" fill="url(#e2wall)"/>
+<rect x="930" y="120" width="140" height="300" fill="url(#e2wall)"/>
+<rect x="120" y="80" width="160" height="14" fill="#1a2130"/>
+<rect x="920" y="80" width="160" height="14" fill="#1a2130"/>
+<path d="M300 430 L560 210 L760 210 L1020 430 Z" fill="#0d1220"/>
+<g stroke="#1a2233" stroke-width="6"><line x1="430" y1="430" x2="560" y2="210"/><line x1="770" y1="430" x2="640" y2="210"/></g>
+<rect x="560" y="208" width="240" height="22" rx="6" fill="#1c2537"/>
+<rect x="600" y="140" width="160" height="10" fill="#121a2a"/>
+<circle cx="680" cy="150" r="6" fill="#e6ecf8"/><circle cx="620" cy="150" r="6" fill="#121a2a"/>
+<circle cx="156" cy="222" r="11" fill="#ffdf9e"/><circle cx="156" cy="222" r="42" fill="url(#e2glow)"/>
+<rect x="130" y="240" width="52" height="140" rx="6" fill="url(#e2wall)"/>
+<circle cx="1044" cy="222" r="11" fill="#ffdf9e"/><circle cx="1044" cy="222" r="42" fill="url(#e2glow)"/>
+<rect x="1018" y="240" width="52" height="140" rx="6" fill="url(#e2wall)"/>
+<rect x="0" y="40" width="1200" height="26" fill="#0c1019"/>
+<g fill="#ffdf9e" opacity="0.75">
+<rect x="180" y="48" width="9" height="14"/><rect x="320" y="48" width="9" height="14"/><rect x="470" y="48" width="9" height="14"/>
+<rect x="620" y="48" width="9" height="14"/><rect x="790" y="48" width="9" height="14"/><rect x="950" y="48" width="9" height="14"/>
+</g>
+<rect y="430" width="1200" height="245" fill="url(#e2fl)"/>
+<path d="M300 430 h600 v40 L300 470 Z" fill="#131927" opacity="0.6"/>
+<g fill="#0f1522"><rect x="340" y="470" width="120" height="70"/><rect x="520" y="470" width="120" height="70"/><rect x="700" y="470" width="120" height="70"/></g>
+<g stroke="#202b40" stroke-width="3" opacity="0.6"><line x1="340" y1="540" x2="460" y2="540"/><line x1="520" y1="540" x2="640" y2="540"/><line x1="700" y1="540" x2="820" y2="540"/></g>
+<rect x="0" y="430" width="1200" height="7" fill="#0a0e17"/>
+</svg></div>`,
+  3: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="c3ceil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#080b13"/><stop offset="1" stop-color="#0c111c"/></linearGradient>
+<linearGradient id="c3fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10141e"/><stop offset="1" stop-color="#05070c"/></linearGradient>
+<linearGradient id="c3fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10161f"/><stop offset="1" stop-color="#434b60"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="#070a12"/>
+<rect y="0" width="1200" height="130" fill="url(#c3ceil)"/>
+<g fill="#e6ecf8" opacity="0.5"><rect x="200" y="40" width="800" height="4"/><rect x="200" y="70" width="800" height="4"/><rect x="200" y="100" width="800" height="4"/></g>
+<rect y="130" width="1200" height="330" fill="url(#c3fade)"/>
+<path d="M0 330 L220 250 L520 214 L820 250 L1200 330 L1200 460 L0 460 Z" fill="#0b101a"/>
+<rect y="460" width="1200" height="215" fill="url(#c3fl)"/>
+<path d="M0 460 L440 420 L1200 480 L1200 500 L0 500 Z" fill="#0e1320" opacity="0.7"/>
+<g stroke="#1a2233" stroke-width="3">
+<line x1="60" y1="160" x2="60" y2="430"/><line x1="190" y1="160" x2="190" y2="430"/>
+<line x1="380" y1="150" x2="380" y2="430"/><line x1="470" y1="150" x2="470" y2="430"/>
+<line x1="700" y1="160" x2="700" y2="430"/><line x1="810" y1="160" x2="810" y2="430"/>
+<line x1="1040" y1="160" x2="1040" y2="430"/><line x1="1130" y1="160" x2="1130" y2="430"/>
+</g>
+<g fill="#131b2a" opacity="0.9">
+<path d="M60 300 q 18 -80 16 -120 h 60 q -4 60 18 120 z"/>
+<path d="M190 320 q 16 -90 14 -130 h 60 q -3 70 20 130 z"/>
+<path d="M380 280 q 18 -80 16 -120 h 66 q -4 60 18 120 z"/>
+<path d="M700 310 q 18 -80 16 -120 h 60 q -5 60 20 120 z"/>
+<path d="M1040 300 q 18 -80 16 -120 h 60 q -5 60 20 120 z"/>
+</g>
+<g stroke="#262f45" stroke-width="4">
+<path d="M220 560 q 0 -70 6 -150"/><path d="M520 580 q 0 -80 8 -170"/><path d="M820 560 q 0 -70 6 -150"/>
+</g>
+<ellipse cx="600" cy="470" rx="520" ry="34" fill="#0b1020" opacity="0.55"/>
+<g fill="#e6ecf8" opacity="0.14"><circle cx="250" cy="400" r="3"/><circle cx="560" cy="360" r="3"/><circle cx="920" cy="410" r="3"/><circle cx="690" cy="330" r="2"/></g>
+</svg></div>`,
+  4: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="g4wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0c0a16"/><stop offset="1" stop-color="#141026"/></linearGradient>
+<linearGradient id="g4fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f0c1c"/><stop offset="1" stop-color="#060510"/></linearGradient>
+<radialGradient id="g4spot" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#fff1c8" stop-opacity="0.9"/><stop offset="1" stop-color="#fff1c8" stop-opacity="0"/></radialGradient>
+<linearGradient id="g4case" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3560" stop-opacity="0.85"/><stop offset="1" stop-color="#100d20"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="#0a0812"/>
+<rect y="0" width="1200" height="430" fill="url(#g4wall)"/>
+<path d="M0 430 L1200 430 L900 120 L300 120 Z" fill="#0d0a1c"/>
+<g fill="#0d0a1c">
+<rect x="90" y="250" width="200" height="180"/><rect x="350" y="200" width="210" height="230"/><rect x="640" y="200" width="210" height="230"/>
+</g>
+<g fill="url(#g4case)" stroke="#241f45" stroke-width="3">
+<rect x="100" y="270" width="40" height="40"/><rect x="100" y="340" width="40" height="40"/>
+<rect x="370" y="230" width="50" height="150" rx="6"/><rect x="440" y="230" width="50" height="150" rx="6"/><rect x="510" y="230" width="40" height="150" rx="6"/>
+<rect x="660" y="230" width="40" height="150" rx="6"/><rect x="720" y="230" width="50" height="150" rx="6"/><rect x="790" y="230" width="40" height="150" rx="6"/>
+</g>
+<rect x="286" y="160" width="44" height="280" rx="4" fill="#0d0a1c"/>
+<path d="M286 200 h44 v-18 h-44 z" fill="#0a0816"/>
+<circle cx="308" cy="170" r="10" fill="#ffedd0"/><circle cx="308" cy="170" r="40" fill="url(#g4spot)"/>
+<path d="M286 250 l 12 -46 l 8 14 l 6 -26 l 10 36 z" fill="#b3122a"/>
+<path d="M290 180 q 6 -16 16 -18" stroke="#0a0714" stroke-width="4" fill="none"/>
+<rect x="870" y="160" width="44" height="280" rx="4" fill="#0d0a1c"/>
+<path d="M870 200 h44 v-18 h-44 z" fill="#0a0816"/>
+<circle cx="892" cy="170" r="10" fill="#ffedd0"/><circle cx="892" cy="170" r="40" fill="url(#g4spot)"/>
+<rect y="430" width="1200" height="245" fill="url(#g4fl)"/>
+<ellipse cx="308" cy="560" rx="150" ry="50" fill="#0b0818" opacity="0.75"/>
+<ellipse cx="892" cy="560" rx="150" ry="50" fill="#0b0818" opacity="0.75"/>
+<ellipse cx="600" cy="640" rx="520" ry="40" fill="#06050f" opacity="0.8"/>
+</svg></div>`,
+  5: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="d5sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2333"/><stop offset=".4" stop-color="#5a6a92"/><stop offset=".72" stop-color="#d8b49c"/><stop offset="1" stop-color="#f3e2ce"/></linearGradient>
+<radialGradient id="d5sun" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#fff3d8" stop-opacity="0.95"/><stop offset="1" stop-color="#fff3d8" stop-opacity="0"/></radialGradient>
+<linearGradient id="d5fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c7d0dc"/><stop offset="1" stop-color="#8f9cad"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="#1b2333"/>
+<rect y="0" width="1200" height="440" fill="url(#d5sky)"/>
+<circle cx="620" cy="360" r="130" fill="url(#d5sun)"/>
+<rect x="680" y="130" width="380" height="310" rx="8" fill="#0c1018"/>
+<g fill="#151d2c"><rect x="700" y="150" width="80" height="60"/><rect x="810" y="150" width="80" height="60"/><rect x="700" y="240" width="80" height="60"/><rect x="810" y="240" width="80" height="60"/></g>
+<path d="M1180 140 L1180 440 L1040 440 Z" fill="#0a0d13"/>
+<rect y="440" width="1200" height="235" fill="url(#d5fl)"/>
+<ellipse cx="620" cy="640" rx="470" ry="46" fill="#f6efe2" opacity="0.7"/>
+<g stroke="#7a889a" stroke-width="3" opacity="0.5"><line x1="180" y1="520" x2="380" y2="520"/><line x1="420" y1="520" x2="620" y2="520"/><line x1="660" y1="520" x2="860" y2="520"/></g>
+</svg></div>`,
+  6: `<div class="svgbg"><svg viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="o6wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a0e0a"/><stop offset="1" stop-color="#100807"/></linearGradient>
+<linearGradient id="o6fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#140d0a"/><stop offset="1" stop-color="#080505"/></linearGradient>
+<radialGradient id="o6lamp" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ffcf8a" stop-opacity="0.9"/><stop offset="1" stop-color="#ffcf8a" stop-opacity="0"/></radialGradient>
+<radialGradient id="o6mon" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#9fb8d8"/><stop offset="1" stop-color="#16202e"/></radialGradient>
+</defs>
+<rect width="1200" height="675" fill="#120907"/>
+<rect y="0" width="1200" height="430" fill="url(#o6wall)"/>
+<rect x="840" y="70" width="280" height="240" fill="#0f0807"/>
+<g fill="url(#o6mon)" opacity="0.85">
+<rect x="862" y="92" width="118" height="84"/><rect x="992" y="92" width="110" height="84"/>
+<rect x="862" y="188" width="118" height="84"/><rect x="992" y="188" width="110" height="84"/>
+</g>
+<rect x="850" y="60" width="260" height="10" fill="#241207"/>
+<rect x="150" y="250" width="300" height="20" rx="6" fill="#2a160a"/>
+<rect x="170" y="230" width="270" height="8" fill="#1c0f07"/>
+<rect x="150" y="270" width="300" height="150" rx="6" fill="#1e1206"/>
+<circle cx="212" cy="250" r="13" fill="#ffcf8a"/>
+<circle cx="212" cy="250" r="46" fill="url(#o6lamp)"/>
+<rect x="550" y="320" width="240" height="12" fill="#241207"/>
+<g fill="#1c0f07"><rect x="560" y="332" width="9" height="40"/><rect x="700" y="332" width="9" height="40"/>
+<rect x="660" y="332" width="9" height="60"/><rect x="620" y="332" width="9" height="60"/></g>
+<rect y="430" width="1200" height="245" fill="url(#o6fl)"/>
+<ellipse cx="212" cy="570" rx="230" ry="46" fill="#0d0604" opacity="0.8"/>
+<g fill="#ffcf8a" opacity="0.4"><rect x="60" y="540" width="10" height="10"/><rect x="180" y="600" width="8" height="8"/><rect x="990" y="500" width="6" height="10"/></g>
+</svg></div>`
+};
+
+/* ---------- dźwięk: niski dron + szum, generowane Web Audio ---------- */
+
+var audioCtx = null, masterGain = null, sfxGain = null, muted = false;
+
+function getSaved() {
+  try { var v = JSON.parse(localStorage.getItem(KEY)); if (v && typeof v === 'object') return v; } catch (e) {}
+  return null;
+}
+function saveRun() {
+  try { localStorage.setItem(KEY, JSON.stringify({
+    s: story ? story.s : 0, chill: story ? story.chill : 0,
+    lastPick: story ? story.lastPick : 0, unlocked: unlocked.slice(), over: story && story.over
+  })); } catch (e) {}
+}
+function clearRun() {
+  try { localStorage.removeItem(KEY); } catch (e) {}
+}
+
+function initAudio() {
+  if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+  try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  masterGain = audioCtx.createGain(); masterGain.gain.value = 0.3; masterGain.connect(audioCtx.destination);
+  sfxGain = audioCtx.createGain(); sfxGain.gain.value = 0.7; sfxGain.connect(masterGain);
+  var droneFilter = audioCtx.createBiquadFilter();
+  droneFilter.type = 'lowpass'; droneFilter.frequency.value = 340;
+  var droneGain = audioCtx.createGain(); droneGain.gain.value = 0;
+  droneFilter.connect(droneGain); droneGain.connect(masterGain);
+  [48, 72, 97].forEach(function (freq) {
+    var o = audioCtx.createOscillator(); o.type = 'sine'; o.frequency.value = freq; o.connect(droneFilter); o.start();
+  });
+  droneGain.gain.linearRampToValueAtTime(0.17, audioCtx.currentTime + 4);
+  var lfo = audioCtx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.04;
+  var lfoG = audioCtx.createGain(); lfoG.gain.value = 130;
+  lfo.connect(lfoG); lfoG.connect(droneFilter.frequency); lfo.start();
+  var bufSize = audioCtx.sampleRate * 2;
+  var noiseBuf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  var data = noiseBuf.getChannelData(0);
+  for (var i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+  var noise = audioCtx.createBufferSource(); noise.buffer = noiseBuf; noise.loop = true;
+  var nF = audioCtx.createBiquadFilter(); nF.type = 'bandpass'; nF.frequency.value = 420; nF.Q.value = 0.4;
+  var nG = audioCtx.createGain(); nG.gain.value = 0.05;
+  noise.connect(nF); nF.connect(nG); nG.connect(masterGain); noise.start();
+  var wl = audioCtx.createOscillator(); wl.type = 'sine'; wl.frequency.value = 0.05;
+  var wlG = audioCtx.createGain(); wlG.gain.value = 200;
+  wl.connect(wlG); wlG.connect(nF.frequency); wl.start();
+}
+function toggleMute() {
+  muted = !muted;
+  var btn = document.getElementById('csound');
+  if (btn) { btn.textContent = muted ? '🔇' : '🔈'; btn.classList.toggle('muted', muted); }
+  if (masterGain) masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.3, audioCtx.currentTime + 0.3);
+  else if (!muted) initAudio();
+  saveRun();
+}
+function playChime() {
+  if (!audioCtx || muted) return;
+  var t = audioCtx.currentTime;
+  var c = audioCtx.createOscillator(); c.type = 'sine'; c.frequency.value = 1180;
+  var m = audioCtx.createOscillator(); m.type = 'sine'; m.frequency.value = 860;
+  var mg = audioCtx.createGain(); mg.gain.value = 380;
+  m.connect(mg); mg.connect(c.frequency);
+  var g = audioCtx.createGain();
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+  c.connect(g); g.connect(sfxGain);
+  c.start(t); m.start(t); c.stop(t + 1.5); m.stop(t + 1.5);
+}
+function playRumble() {
+  if (!audioCtx || muted) return;
+  var t = audioCtx.currentTime;
+  var o = audioCtx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(84, t); o.frequency.exponentialRampToValueAtTime(36, t + 0.5);
+  var g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.3, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+  o.connect(g); g.connect(sfxGain); o.start(t); o.stop(t + 0.65);
+}
+function playCrackle() {
+  if (!audioCtx || muted) return;
+  var t = audioCtx.currentTime;
+  var size = Math.floor(audioCtx.sampleRate * 0.3);
+  var buf = audioCtx.createBuffer(1, size, audioCtx.sampleRate);
+  var d = buf.getChannelData(0);
+  for (var i = 0; i < size; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / size, 2);
+  var src = audioCtx.createBufferSource(); src.buffer = buf;
+  var f = audioCtx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1800;
+  var g = audioCtx.createGain(); g.gain.value = 0.2;
+  src.connect(f); f.connect(g); g.connect(sfxGain); src.start(t);
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function plain(s) { return String(s).replace(/★([^★]*)★/g, '$1'); }
+function decorate(s) {
+  return esc(s).replace(/★([^★]*)★/g, '<span class="glos">$1</span>').replace(/★/g, '');
+}
+
+/* ---------- słówka z n2data.js użyte w opowieści (indeksy = k w scenach) ---------- */
+
+var VN_WORDS = [
+  { w:'深夜',      r:'しんや', m:'late at night' },
+  { w:'当番',      r:'とうばん', m:'being on duty' },
+  { w:'交替',      r:'こうたい', m:'alternation; change; relief; shift' },
+  { w:'巡る',      r:'めぐる', m:'to go around' },
+  { w:'一斉',      r:'いっせい', m:'simultaneous; all at once' },
+  { w:'うっかり',  r:'うっかり', m:'carelessly; thoughtlessly; inadvertently' },
+  { w:'しびれる',  r:'しびれる', m:'to become numb' },
+  { w:'鐘',        r:'かね', m:'bell; chime' },
+  { w:'雑音',      r:'ざつおん', m:'noise (jarring; grating)' },
+  { w:'見掛け',    r:'みかけ', m:'outward appearance' },
+  { w:'覗く',      r:'のぞく', m:'to peep in; to look in; to peek in; to stick out' },
+  { w:'睨む',      r:'にらむ', m:'to glare at; to scowl at' },
+  { w:'這う',      r:'はう', m:'to creep; to crawl' },
+  { w:'近寄る',    r:'ちかよる', m:'to approach; to draw near' },
+  { w:'迫る',      r:'せまる', m:'to draw near; to press' },
+  { w:'蘇る',      r:'よみがえる', m:'to be resurrected; to be revived; to be resuscitated' },
+  { w:'浮ぶ',      r:'うかぶ', m:'to float; to rise to the surface; to come to mind' },
+  { w:'伝わる',    r:'つたわる', m:'to be handed down; to be conveyed' },
+  { w:'響く',      r:'ひびく', m:'to resound' },
+  { w:'破片',      r:'はへん', m:'fragment; splinter; broken piece' },
+  { w:'薄暗い',    r:'うすぐらい', m:'dim; gloomy' },
+  { w:'真っ暗',    r:'まっくら', m:'total darkness; pitch dark' },
+  { w:'真っ白',    r:'まっしろ', m:'pure white' },
+  { w:'立ち止まる',r:'たちどまる', m:'to stop; to halt; to stand still' },
+  { w:'油断',      r:'ゆだん', m:'negligence; unpreparedness; off guard' },
+  { w:'目印',      r:'めじるし', m:'mark; sign; landmark' }
+];
+
+/* ---------- opowieść ─ 「最終展示」(horror) ---------- */
+
+var CHAPTERS = [
+  {
+    bg:6, who:'', title:'守衛室', kana:'しゅえいしつ',
+    paras:[
+      { ja:'一週間後、老舗百貨店「白夜堂」は、その長い歴史に、幕を下ろす。', k:-1 },
+      { ja:'私は、その最後の★深夜★を守る、臨時の警備員として雇われた。', k:0 },
+      { ja:'面接は三分で終わった。「後任が見つかるまで、続けてくれればいい」と、それだけだった。', k:-1 },
+      { ja:'引き継ぎの相手は、二十五年、ここで★当番★を続けてきた、田島さんという男だった。', k:1 },
+      { ja:'田島さんは、よれた制服を着て、第一に、こう言った。', k:-1 },
+      { ja:'「一つだけ覚えろ。──深夜、フロアで、絶対に、立ち止まるな。」', k:-1 },
+      { ja:'「理由は、慣れるうちに分かる。──名前を、毎晩、日誌に書け。それだけを忘れなければ、大丈夫だ」', k:-1, fx:'flicker' }
+    ]
+  },
+  {
+    bg:3, who:'', title:'売場', kana:'うりば',
+    paras:[
+      { ja:'初夜の売場は、思ったより広く、静かだった。', k:-1 },
+      { ja:'蛍光灯だけが、長い通路を、淡く照らしていた。', k:-1 },
+      { ja:'私は、五階のエスカレーターの前で、マネキンの肩に、チョークで小さな★目印★をつけた。', k:25 },
+      { ja:'田島さんの言うとおり、翌朝、その印は、少しだけ、ずれていた。', k:-1, fx:'flicker' },
+      { ja:'夜の金庫のような静けさのなか、私は日誌を開いた。──★うっかり★、署名の欄を、見落とすところだった。', k:5 },
+      { ja:'田島さんの指が、欄を二度、叩いた。──「名前は、在る証拠だ。ここではな」', k:-1 }
+    ]
+  },
+  {
+    bg:6, who:'', title:'日誌', kana:'にっし',
+    paras:[
+      { ja:'一通りを覚えたころ、田島さんが言った。「明日が、私の最後の★交替★だ」', k:2 },
+      { ja:'「後は頼んだ。──あの子のことも、頼んだぞ」', k:-1 },
+      { ja:'「あの子」とは、五階のギャラリーに飾られた、少女のマネキンのことだと、私は思った。', k:-1 },
+      { ja:'田島さんは、壁の写真を、独り言のように指した。──若い店員が、玩具売場で、小さな女の子の手を握っている写真だ。', k:-1 },
+      { ja:'「俺が、あの子を見つけたのは、開店初日の玩具売場だった。──見つけたとき、泣きもしなかった」', k:-1, fx:'flash' }
+    ]
+  },
+  {
+    bg:3, who:'', title:'巡視', kana:'じゅんし',
+    paras:[
+      { ja:'二夜目、私は、決められた順路を★巡る★ように、歩き続けた。', k:3 },
+      { ja:'三階の時計売場で、すべての時計の針が、★一斉★に、三時を指した。', k:4, fx:'flash' },
+      { ja:'開店当時、白夜堂の記念セールは、深夜三時まで開いていたという。', k:-1 },
+      { ja:'五階のギャラリーは、夜でなければ、ただのショーウィンドウの★見掛け★だ。', k:9 },
+      { ja:'けれど、守衛室のスピーカーから、報知機を通したような★雑音★が、ずっと止まなかった。', k:8 },
+      { ja:'三時半を過ぎると、五階から、小さな★鐘★の音が、一度だけ響いた。──あの階に、鐘なんて、無いはずだった。', k:7, fx:'flicker' },
+      { ja:'配管の中に、ブザーのような音が★響く★。──何かが、立て続けに、目を覚ましている。', k:18 }
+    ]
+  },
+  {
+    bg:1, who:'', title:'倉庫', kana:'そうこ',
+    paras:[
+      { ja:'三日目、私は、予備の電球を取りに、地下の倉庫へ降りた。', k:-1 },
+      { ja:'倉庫は、昼でも★薄暗い★場所だった。棚の影が、どこまでも続いていた。', k:20 },
+      { ja:'奥のほうで、何かが落ちた。──重いものが、床を、ゆっくりと★伝わる★音がする。', k:17 },
+      { ja:'非常口の案内板の先は、★真っ暗★で、何も見えなかった。', k:21 },
+      { ja:'足元で、何かが砕けた。──光る★破片★が、ひとつ、床を転がっていった。', k:19 },
+      { ja:'私は、ルールを、その瞬間、完全に忘れていた。', k:-1 },
+      { ja:'足音は、棚と棚の間で、止まった。──「……誰？」', k:-1, fx:'flicker' }
+    ],
+    choice: {
+      paras:[ { ja:'その言葉が、喉まで出かかった。──私は、今、どうすべきだったのか。', k:-1 } ],
+      options:[
+        { label:'── 声を張り上げる', toNote:'物陰から、田島さんが顔を出した。「……名前を、叫ぶな」と、彼は言った。', chill:0 },
+        { label:'── 物陰に隠れて、息を殺す', toNote:'足音は、私のすぐ前で、止まった。──結局、私は、朝まで、その場を動けなかった。', chill:1 }
+      ]
+    }
+  },
+  {
+    bg:4, who:'', title:'家族の間', kana:'かぞくのま',
+    paras:[
+      { ja:'四日目、私は、五階のギャラリー──「家族の間」と呼ばれる部屋に、初めて足を入れた。', k:-1 },
+      { ja:'私は、入口から、ケースの並びを、そっと★覗く★ようにした。──ガラスの奥に、白いドレスの少女が、立っていた。', k:10 },
+      { ja:'床には「返品」と書かれた札が落ちていて、私は、しゃがんで、それを拾った。', k:-1 },
+      { ja:'ケースに近づくほど、足の先が、少しずつ★しびれる★ような気がしてきた。', k:6 },
+      { ja:'見つめていると、ケースの中の少女が、からくりのように、首だけを、こちらへ向けた。', k:-1, fx:'shake' },
+      { ja:'何かが、音もなく、私の後ろへ★近寄る★気配がする。', k:13 },
+      { ja:'私は、自分の名前を、心の中で、三度、繰り返した。──この夜から、私には、それしか、頼れる物がなかった。', k:-1 }
+    ],
+    choice: {
+      paras:[ { ja:'五階の電気が、一度、消えた。──暗闇の中で、私は、今、動くべきだった。', k:-1, fx:'flash' } ],
+      options:[
+        { label:'── 振り返らず、走って離れる', toNote:'階段を数段まで駆け上がったところで、私は名を叫んだ。──その声で、夜は、止まった。', chill:0 },
+        { label:'── 動かない。彼女を、見つめたまま', toNote:'少女は、ずっと、こちらを見ていた。──やがて、朝が来た。何も、起きなかった。', chill:1 }
+      ]
+    }
+  },
+  {
+    bg:6, who:'田島', title:'最後の交替', kana:'さいごのこうたい',
+    paras:[
+      { ja:'六日目の夜、田島さんは、事務所の机に、淡い青のスカーフを、一枚置いた。', k:-1 },
+      { ja:'「開店初日、迷子の女の子を、玩具売場で見つけたのは、俺だ。──あの子は、泣きもしなかった。ポケットには、このスカーフが、一枚、忘れられていた」', k:-1, fx:'flash' },
+      { ja:'その言葉で、閉ざされていた記憶が、ひとりでに★浮ぶ★。──玩具売場、母の手、そして、青いスカーフ。', k:16 },
+      { ja:'「迷子の子は、あの日、『有里』を、抱き上げた。──白夜堂は、そのときから、あの子を、返しそびれたままだ」', k:-1 },
+      { ja:'私は、★蘇る★記憶のおもむくまま、言葉にした。「──その子は、私、なんですか」', k:15 },
+      { ja:'スカーフの端には、小さな★真っ白★な花の刺繍があった。──幼い私の、手の跡が、その上に残っていた。', k:22 },
+      { ja:'田島さんは、笑わずに、言った。「明日の夜、この店は、残った物を、持ち主に返す。──お前が、その持ち主だ。帰りなさい」', k:-1, fx:'flicker' }
+    ]
+  },
+  {
+    bg:3, who:'', title:'零時', kana:'れいじ',
+    paras:[
+      { ja:'閉店の夜。私は、決められた順路を、歩き続けた。', k:-1 },
+      { ja:'零時、エレベーターが、すべての階で、同時に開いたまま、止まった。', k:-1, fx:'flicker' },
+      { ja:'マネキンが、棚から★這う★ように、ひとつ、またひとつと降りてくる。', k:12 },
+      { ja:'それらは、私を、見開いた瞳で★睨む★ように見ながら、一歩、また一歩──。', k:11 },
+      { ja:'「絶対に、★立ち止まる★な」──田島さんの声が、戻ってきた。', k:23 },
+      { ja:'けれど、五階の「家族の間」の扉が、ひとりでに開いて、招いていた。', k:-1, fx:'shake' },
+      { ja:'私は、立ち止まった。──長い夜が、そこで、私に★迫る★。', k:14 },
+      { ja:'教訓を思い出したのは、そのときだった。──★油断★は、立ち止まりの、別の名前だ。', k:24 }
+    ],
+    choice: {
+      paras:[ { ja:'ケースの中の「有里」が、私に、青いスカーフを差し出した。──返ってくる拍子に、帰り道が、開く。', k:-1, fx:'flash' } ],
+      options:[
+        { label:'── スカーフを受け取って、非常口へ進む', toNote:'私の手は、震えながらも、スカーフをつかんだ。──この店に返してもらえる物は、もう、これで最後だと、確かめたかった。', chill:0 },
+        { label:'── 動かずに、その手を、握り返す', toNote:'私は、その冷たい手を、握り返した。──ここにいれば、あの子は、ひとりにならない。そう、思った。', chill:0 }
+      ]
+    }
+  },
+  {
+    bg:5, who:'', title:'暁', kana:'あかつき',
+    paras:[
+      { ja:'', k:-1, fx:'flash', variants:[
+          '非常口を抜けると、夜が、ようやく明け始めていた。──五階の窓で、白いドレスの少女が、こちらへ、手を振った。',
+          'マネキンたちは、私の周りに、静かな輪を作った。──五階は、この夜から、私たちの「家族の間」になる。',
+          '気がつくと、私は、ケースの中で、胸の前で手を組んでいた。──次の日誌には、私の名前が、読みやすい字で書かれていた。'
+        ] },
+      { ja:'', k:-1, variants:[
+          '私は、青いスカーフを、首に巻き直した。──「さようなら」と、小さく言って、白夜堂を、後にした。',
+          '「お前の分まで、立ち続ける」と、田島さんは言った。──私たちは、朝の点呼を、声を揃えて数えた。',
+          '「……先輩」と、私を名乗る女の子が、面接に来た。──彼女の肩に、チョークの印が、ひとつ、残っていた。'
+        ] }
+    ]
+  }
+];
+
+var ENDINGS = [
+  { title:'暁の帰り道', sub:'あかつきのかえりみち', body:'淡い青のスカーフを肩に、私は、白夜堂を出た。振り返ると、五階の明かりが、ひとつ、静かに消えた。──「有里」も、ようやく、帰るところだった。翌週、建物は取り壊され、通りには、新しい朝が来た。店が返してくれたのは、スカーフと、「迷子のままでいた」十年分の時間だった。' },
+  { title:'家族の間', sub:'かぞくのま', body:'私は、あの子と、マネキンたちと、このフロアで暮らすことを選んだ。──時々、夜中に、どこかから「迷子」の足音が響く。そんなときは、田島さんが、小さく呼ぶ。──「いらっしゃい。ここが、帰る場所ですよ」。白夜堂は、今夜も、誰かの帰りを待っている。' },
+  { title:'展示物', sub:'てんじぶつ', body:'私は、ケースの中で、手を組んで立っている。──次の警備員は、面接のとき、私の顔を、少し長く眺めた。きっと、「こいつ、生きている？」と思ったのだろう。──違うんだよ。私は、ただ、立ち止まってしまっただけだ。誰かが、ここで、私の名前に気づいてくれるまで。' }
+];
+
+var SCENES = [];
+var story = null;
+var unlocked = (getSaved() && getSaved().unlocked) || [];
+var speedMs = 34;
+
+function cloneP(p) {
+  var c = { ja:p.ja, k:p.k };
+  if (p.fx) c.fx = p.fx;
+  if (p.variants) c.variants = p.variants.slice();
+  return c;
+}
+
+function buildScenes() {
+  SCENES = [];
+  CHAPTERS.forEach(function (ch, idx) {
+    ch.paras.forEach(function (p, pi) {
+      SCENES.push({
+        bg: ch.bg, who: p.who != null ? p.who : ch.who, para: cloneP(p),
+        chapterStart: pi === 0, chapterTitle: ch.title, chapterKana: ch.kana, chapterNum: idx + 1
+      });
+    });
+    if (ch.choice) {
+      SCENES.push({
+        bg: ch.bg, who: ch.who, para: cloneP(ch.choice.paras[0]), end: true,
+        choices: ch.choice.options.map(function (o) { return { label: o.label, note: o.toNote, chill: o.chill || 0 }; })
+      });
+    }
+  });
+  return SCENES;
+}
+
+function start() {
+  document.getElementById('overlay').classList.add('hide');
+  story = { s: 0, chill: 0, lastPick: 0, over: false };
+  dots();
+  renderChill();
+  showScene();
+  saveRun();
+}
+
+function dots() {
+  var box = document.getElementById('dots');
+  box.innerHTML = '';
+  var N = SCENES.length;
+  if (!N) return;
+  var seg = Math.max(1, Math.round(N / 22));
+  var active = Math.floor(Math.min(story.s, N - 1) / seg);
+  var count = Math.ceil(N / seg);
+  for (var i = 0; i < count; i++) {
+    var d = document.createElement('span');
+    d.className = 'dot' + (i === active ? ' on' : '');
+    box.appendChild(d);
+  }
+}
+
+function renderChill() {
+  var g = document.getElementById('chillg');
+  if (!g || !story) return;
+  var dotsEl = g.querySelectorAll('i');
+  var f = Math.min(story.chill, 3);
+  for (var i = 0; i < dotsEl.length; i++) dotsEl[i].className = i < f ? 'on' : '';
+}
+
+var typing = null, skipped = false, doneTyping = false, autoOn = false, autoT = null;
+
+function stopTyping() { if (typing) { clearInterval(typing); typing = null; } }
+function stopAuto() { if (autoT) { clearTimeout(autoT); autoT = null; } }
+
+function fullHtml() { return decorate(SCENES[story.s].para.ja); }
+function rawJa() { return plain(SCENES[story.s].para.ja); }
+
+function typeJa() {
+  var el = document.getElementById('ja');
+  el.innerHTML = ''; doneTyping = false;
+  document.getElementById('cnext').classList.remove('pulse');
+  stopAuto();
+  var text = rawJa();
+  if (skipped) { el.innerHTML = fullHtml(); finishLine(); return; }
+  var i = 0;
+  typing = setInterval(function () {
+    i++;
+    el.innerHTML = esc(text.slice(0, i));
+    if (i >= text.length) { stopTyping(); el.innerHTML = fullHtml(); finishLine(); }
+  }, speedMs);
+}
+
+function finishLine() {
+  doneTyping = true; chips(); document.getElementById('cnext').classList.add('pulse');
+  if (autoOn && story && !story.over && !SCENES[story.s].end) {
+    stopAuto(); autoT = setTimeout(function () { autoT = null; advance(); }, 2600);
+  }
+}
+
+function chips() {
+  var box = document.getElementById('chips');
+  box.innerHTML = '';
+  var para = SCENES[story.s].para;
+  if (!para || para.k == null || para.k < 0) return;
+  var w = VN_WORDS[para.k];
+  if (!w) return;
+  var c = document.createElement('span');
+  c.className = 'chip';
+  c.textContent = w.w;
+  c.onclick = function (e) { e.stopPropagation(); openGloss(para.k); };
+  box.appendChild(c);
+}
+
+function openGloss(k) {
+  var box = document.getElementById('glist');
+  var layer = document.getElementById('gloss');
+  box.innerHTML = '';
+  var w = VN_WORDS[k];
+  if (!w) { layer.classList.remove('show'); return; }
+  var d = document.createElement('div');
+  d.innerHTML = '<span class="gw">' + esc(w.w) + '</span><span class="gk">' + esc(w.r) + '</span>' +
+    '<div class="gm">' + esc(w.m) + '</div>';
+  box.appendChild(d);
+  layer.classList.add('show');
+  speak(w.w + '。' + w.r);
+}
+
+function triggerFx(fx) {
+  var stage = document.getElementById('stage');
+  var flash = document.getElementById('flash');
+  if (fx === 'shake') {
+    stage.classList.remove('fx-shake'); void stage.offsetWidth; stage.classList.add('fx-shake');
+    playRumble();
+  } else if (fx === 'flash') {
+    flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+    playChime();
+  } else if (fx === 'flicker') {
+    stage.classList.remove('fx-flicker'); void stage.offsetWidth; stage.classList.add('fx-flicker');
+    playCrackle();
+  }
+}
+
+function advance() {
+  if (!story || story.over) return;
+  var gloss = document.getElementById('gloss');
+  if (gloss.classList.contains('show')) return;
+  var sc = SCENES[story.s];
+  if (typing) { skipped = true; stopTyping(); typeJa(); return; }
+  if (!doneTyping) { skipped = true; typeJa(); return; }
+  if (sc.end && sc.choices) { showChoices(); return; }
+  if (story.s + 1 < SCENES.length) { story.s++; skipped = false; saveRun(); showScene(); }
+  else { showEnding(); }
+}
+
+function applyChoice(idx) {
+  var sc = SCENES[story.s];
+  var opt = sc.choices[idx];
+  story.chill = Math.min(3, story.chill + (opt.chill || 0));
+  story.lastPick = idx;
+  renderChill();
+}
+
+function endingIndex() {
+  if (story.chill >= 2) return 2;
+  return story.lastPick != null ? story.lastPick : 0;
+}
+
+function showChapterCard(sc, then) {
+  var card = document.getElementById('chapterCard');
+  card.innerHTML = '<div><div class="num">第' + sc.chapterNum + '章</div>' +
+    '<div class="kt"><ruby>' + esc(sc.chapterTitle) + '<rt>' + esc(sc.chapterKana) + '</rt></ruby></div>' +
+    '<div class="line"></div></div>';
+  card.classList.add('show');
+  setTimeout(function () {
+    card.classList.remove('show');
+    setTimeout(then, 900);
+  }, 1500);
+}
+
+function showScene(fromResume) {
+  var sc = SCENES[story.s];
+  var mbox = document.getElementById('mbox');
+  function render() {
+    if (sc.para && sc.para.variants) {
+      var ei = endingIndex();
+      sc.para.ja = sc.para.variants[ei] != null ? sc.para.variants[ei] : sc.para.variants[0];
+      delete sc.para.variants;
+    }
+    mbox.classList.add('show');
+    mbox.classList.remove('in');
+    document.getElementById('choices').classList.remove('show');
+    document.getElementById('who').textContent = sc.who || '';
+    setBg(sc.bg || 0);
+    skipped = false;
+    requestAnimationFrame(function () { mbox.classList.add('in'); });
+    typeJa();
+    dots();
+    renderChill();
+    if (sc.para && sc.para.fx) setTimeout(function () { triggerFx(sc.para.fx); }, 120);
+  }
+  if (sc.chapterStart && !fromResume) { mbox.classList.remove('show'); showChapterCard(sc, render); }
+  else render();
+}
+
+function showChoices() {
+  var sc = SCENES[story.s];
+  var box = document.getElementById('choices');
+  box.innerHTML = '';
+  var items = sc.choices || [{ label:'次へ ▸', note:null, chill:0 }];
+  items.forEach(function (ch, i) {
+    var b = document.createElement('button');
+    b.className = 'choice';
+    b.textContent = ch.label;
+    b.onclick = function () {
+      box.classList.remove('show');
+      applyChoice(i);
+      if (ch.note) {
+        var cur = SCENES[story.s];
+        SCENES.splice(story.s + 1, 0, { bg: cur.bg, who: cur.who, para: { ja: ch.note, k:-1 } });
+      }
+      if (story.s + 1 < SCENES.length) { story.s++; skipped = false; saveRun(); showScene(); }
+      else showEnding();
+    };
+    box.appendChild(b);
+  });
+  box.classList.add('show');
+}
+
+function showUnlocks() {
+  var el = document.getElementById('unl');
+  if (el) el.innerHTML = 'エンディング解放: <b>' + unlocked.length + '</b> / 3' +
+    '<span class="uned">　' + [0,1,2].map(function (i) { return '<i>' + (unlocked.indexOf(i) >= 0 ? '◆' : '◇') + '</i>'; }).join('') + '</span>';
+}
+
+function showEnding() {
+  story.over = true;
+  stopAuto();
+  var idx = Math.max(0, Math.min(2, endingIndex()));
+  if (unlocked.indexOf(idx) < 0) unlocked.push(idx);
+  saveRun();
+  document.getElementById('mbox').classList.remove('show');
+  document.getElementById('choices').classList.remove('show');
+  var end = ENDINGS[idx];
+  var overlay = document.getElementById('overlay');
+  document.getElementById('cardInner').innerHTML =
+    '<h1>' + esc(end.title) + ' <span>— ' + esc(end.sub) + '</span></h1>' +
+    '<p class="hint">' + (idx === 2 ? 'この夜、あなたは一度以上、立ち止まった。' : 'この夜、あなたは、最後まで動き続けた。') + '</p>' +
+    '<p>' + esc(end.body) + '</p>' +
+    '<button class="btn" id="btnRestart">▶ もう一度 — Zagraj ponownie</button>' +
+    '<button class="btn ghost" id="btnMenu">▲ タイトルへ — Menu</button>';
+  overlay.classList.remove('hide');
+  document.getElementById('btnRestart').addEventListener('click', function () {
+    initAudio();
+    clearRun();
+    buildScenes();
+    start();
+  });
+  document.getElementById('btnMenu').addEventListener('click', function () { location.reload(); });
+}
+
+function setBg(k) {
+  if (k < 0 || k >= BG_CLASSES.length) k = BG_CLASSES.length - 1;
+  var layer = document.getElementById('bgLayer');
+  var bg = BACKGROUNDS[k];
+  var div = document.createElement('div');
+  div.className = 'bg ' + bg.cls + ' on';
+  div.innerHTML = BG_DECOR[k] || '';
+  if (bg.particles === 'dust') {
+    var dbox = document.createElement('div');
+    dbox.className = 'particles';
+    var n = 14 + Math.floor(Math.random() * 6);
+    for (var i = 0; i < n; i++) {
+      var m = document.createElement('span');
+      m.className = 'mote';
+      m.style.left = (3 + Math.random() * 92) + '%';
+      m.style.top = (20 + Math.random() * 55) + '%';
+      var dur = (6 + Math.random() * 7).toFixed(1);
+      m.style.animationDuration = dur + 's';
+      m.style.animationDelay = (Math.random() * 6).toFixed(1) + 's';
+      dbox.appendChild(m);
+    }
+    div.appendChild(dbox);
+  } else if (bg.particles === 'fireflies') {
+    var fbox = document.createElement('div');
+    fbox.className = 'particles';
+    var n2 = 12 + Math.floor(Math.random() * 6);
+    for (var j = 0; j < n2; j++) {
+      var f = document.createElement('span');
+      f.className = 'firefly';
+      f.style.left = (5 + Math.random() * 90) + '%';
+      f.style.top = (12 + Math.random() * 60) + '%';
+      f.style.animationDuration = (3 + Math.random() * 3).toFixed(2) + 's, ' + (2 + Math.random() * 2.5).toFixed(2) + 's';
+      f.style.animationDelay = (Math.random() * 3).toFixed(2) + 's, ' + (Math.random() * 3).toFixed(2) + 's';
+      fbox.appendChild(f);
+    }
+    div.appendChild(fbox);
+  }
+  layer.appendChild(div);
+  [].slice.call(layer.children).forEach(function (c) {
+    if (c !== div) { c.classList.remove('on'); setTimeout(function(){ if (c.parentNode) c.parentNode.removeChild(c); }, 1500); }
+  });
+}
+
+function speak(text) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text.replace(/<[^>]*>/g, ''));
+    u.lang = 'ja-JP'; u.rate = 0.85;
+    var v = window.speechSynthesis.getVoices().filter(function (x) { return /ja/i.test(x.lang); })[0];
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+document.getElementById('cnext').addEventListener('click', advance);
+document.getElementById('ja').addEventListener('click', advance);
+document.getElementById('cspeak').addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (story) speak(rawJa());
+});
+document.getElementById('gclose').addEventListener('click', function () {
+  document.getElementById('gloss').classList.remove('show');
+  window.speechSynthesis.cancel();
+});
+document.getElementById('csound').addEventListener('click', function (e) {
+  e.stopPropagation(); toggleMute();
+});
+document.getElementById('cspeed').addEventListener('click', function (e) {
+  e.stopPropagation();
+  var order = [['ふつう', 34], ['ゆっくり', 66], ['はやい', 17]];
+  var cur = order.findIndex(function (x) { return x[1] === speedMs; });
+  var next = order[(cur + 1) % order.length];
+  speedMs = next[1];
+  this.textContent = '文:' + next[0];
+});
+document.getElementById('cauto').addEventListener('click', function (e) {
+  e.stopPropagation();
+  autoOn = !autoOn;
+  this.textContent = autoOn ? '⏸自動' : '▶自動';
+  this.classList.toggle('act', autoOn);
+  if (autoOn && doneTyping && !story.over) {
+    finishLine();
+  }
+});
+document.getElementById('btnStart').addEventListener('click', function () {
+  initAudio();
+  buildScenes();
+  start();
+});
+document.getElementById('btnResume').addEventListener('click', function () {
+  initAudio();
+  buildScenes();
+  var save = getSaved();
+  story = { s: save.s || 0, chill: save.chill || 0, lastPick: save.lastPick || 0, over: false };
+  if (story.s >= SCENES.length) story.s = 0;
+  document.getElementById('overlay').classList.add('hide');
+  dots();
+  renderChill();
+  showScene(true);
+});
+document.addEventListener('keydown', function (e) {
+  if (e.code === 'Escape') {
+    document.getElementById('gloss').classList.remove('show');
+    return;
+  }
+  if (e.code === 'Space' || e.code === 'Enter') {
+    e.preventDefault();
+    var overlay = document.getElementById('overlay');
+    if (!overlay.classList.contains('hide')) {
+      var r = document.getElementById('btnRestart');
+      var res = document.getElementById('btnResume');
+      if (r) r.click();
+      else if (res && res.style.display !== 'none') res.click();
+      else document.getElementById('btnStart').click();
+      return;
+    }
+    advance();
+  }
+});
+
+(function initOverlay() {
+  var save = getSaved();
+  var resume = document.getElementById('btnResume');
+  if (save && save.over && save.s > 0) { resume.style.display = 'none'; clearRun(); }
+  else if (save && save.s > 0) resume.style.display = '';
+  showUnlocks();
+})();
+
+buildScenes();
+</script>
+</body>
+</html>
