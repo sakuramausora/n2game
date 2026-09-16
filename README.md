@@ -54,7 +54,31 @@ Bez klucza generaator spróbuje połączyć się z `api/story` (lokalny `node se
 
 ## Postęp między urządzeniami (bez konta i backendu)
 
-Postęp zapisuje się automatycznie po każdej akcji w `localStorage` przeglądarki danego urządzenia (osobno per urządzenie). Żeby przenieść go na inny gadżet:
+Postęp zapisuje się automatycznie po każdej akcji w `localStorage` przeglądarki danego urządzenia (osobno per urządzenie).
+
+### Automatycznie przez GitHub (zalecane)
+
+Stan nauki (status słówek + statystyki) można synchronizować w pliku `progress/save.json` w Twoim repozytorium — działa na Pages, bez żadnego backendu. Wszystko dzieje się z przeglądarki przez GitHub API; token trzymany jest tylko w przeglądarce danego urządzenia.
+
+1. W aplikacji: **Start → Ustawienia → 🔄 Synchronizacja postępu (GitHub)**.
+2. Uzupełnij:
+   - **Repo (login/nazwa)** — np. `TWOJ_LOGIN/jlpt-n2-game`,
+   - **Nazwa urządzenia** — np. `dom` (widoczna przy scalaniu), 
+   - **Token GitHub** — patrz niżej.
+3. Wciśnij **Zapisz ustawienia sync**, a potem **🔥 Synchronizuj teraz**. Przy powtarzających się uruchomieniach sync działa sam:
+   - po każdej ocenionej akcji (opóźnienie ~1,5 s),
+   - przy ukryciu/wejściu na kartę, powrocie sieci i po wczytaniu strony.
+
+**Token GitHub (darmowy):**
+1. https://github.com/settings/tokens → „Generate new token (classic)”.
+2. Zaznacz zakres **`repo`** (pełny dostęp do repo).
+3. Skopiuj `ghp_…` i wklej w ustawieniach gry. Przechowywany jest tylko w `localStorage` tej przeglądarki (nie trafia do eksportów ani do repo).
+
+**Jak działa scalanie:** każde urządzenie „uczy” najsilniejszy stan („znam” > „uczę się” > „nowe”), statystyki łączy przez maksimum, a wynik wypycha do `progress/save.json`. Konfliktów nie ma — oba urządzenia dojdą do tego samego stanu.
+
+> Uwaga: plik `progress/save.json` jest w `.gitignore` — nie wgrywaj go ręcznie do repo.
+
+### Ręcznie (alternatywa)
 
 - na źródłowym urządzeniu: stopka → **exportuj postęp** (pobiera `n2game-save.json`),
 - przenieś plik np. przez Google Drive / iCloud / Dropbox / e-mail,

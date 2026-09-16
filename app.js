@@ -10,7 +10,7 @@
   var LS_KEY = 'n2game.v1';
   var state = {
     status: {},          // idx -> 'new' | 'learn' | 'know'
-    settings: { batchSize: 10, quizMode: 'km', sound: true, geminiKey: '', geminiModel: 'gemini-2.5-flash' },
+    settings: { batchSize: 10, quizMode: 'km', sound: true, geminiKey: '', geminiModel: 'gemini-2.5-flash', ghRepo: '', ghBranch: 'main', ghToken: '', ghDevice: '', ghOn: true },
     group: [],           // current group indices
     groupKey: '',        // cache key for story
     stats: { played: 0, correct: 0, streaks: 0, bestStreak: 0, batches: 0, stories: 0 }
@@ -36,15 +36,143 @@
   restoreState();
   window.N2GAME_RESTORE = restoreState;
 
-  function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
+  function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} scheduleSync(); }
   window.N2GAME_EXPORT = function () {
     var s = JSON.parse(JSON.stringify(state));
-    if (s.settings) { delete s.settings.geminiKey; delete s.settings.geminiModel; }
+    if (s.settings) { delete s.settings.geminiKey; delete s.settings.geminiModel; delete s.settings.ghToken; }
     return JSON.stringify(s);
   };
-  window.N2GAME_IMPORT = function (raw) { try { window.N2GAME_RESTORE(raw); save(); return true; } catch (e) { return false; } };
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') save(); });
+  window.N2GAME_IMPORT = function (raw) { try { window.N2GAME_RESTORE(raw); save(); syncNow(true); return true; } catch (e) { return false; } };
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') { save(); syncNow(false); } });
   window.addEventListener('beforeunload', function () { save(); });
+  window.addEventListener('online', function () { syncNow(true); });
+
+  // ---------------- GitHub sync (progress/save.json) ----------------
+  var GH_PROGRESS_PATH = 'progress/save.json';
+  var SYNC_META_KEY = 'n2game.syncmeta.v1';
+  var syncMeta = { fp: '', lastAt: 0 };
+  function loadSyncMeta() { try { syncMeta = JSON.parse(localStorage.getItem(SYNC_META_KEY) || '{}') || {}; } catch (e) {} }
+  function storeSyncMeta() { try { localStorage.setItem(SYNC_META_KEY, JSON.stringify(syncMeta)); } catch (e) {} }
+  loadSyncMeta();
+
+  var syncTimer = null, syncing = false, syncMsg = '';
+  function setSyncMsg(t) {
+    syncMsg = t || '';
+    var elx = document.getElementById('syncmsg');
+    if (elx) elx.textContent = syncMsg;
+  }
+  function progressFp() { return JSON.stringify(state.status) + '|' + JSON.stringify(state.stats); }
+  function progressPayload() {
+    var status = {}, stats = {};
+    Object.keys(state.status).forEach(function (k) { status[k] = state.status[k]; });
+    ['played', 'correct', 'streaks', 'bestStreak', 'batches', 'stories'].forEach(function (k) { stats[k] = state.stats[k] || 0; });
+    return { v: 1, updatedAt: Date.now(), status: status, stats: stats };
+  }
+  function scheduleSync() {
+    if (syncMeta.fp && syncMeta.fp === progressFp()) return;
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(function () { syncTimer = null; syncNow(false); }, 1500);
+  }
+  function b64e(str) {
+    var bytes = new TextEncoder().encode(str), bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function b64d(b64) {
+    var bin = atob(String(b64).replace(/\s+/g, '')), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  function ghApi(path, opts) {
+    var cfg = state.settings, o = opts || { method: 'GET' };
+    var h = { accept: 'application/vnd.github+json' };
+    if (cfg.ghToken) h.authorization = 'token ' + cfg.ghToken;
+    if (o.body !== undefined) h['content-type'] = 'application/json';
+    return fetch('https://api.github.com' + path, { method: o.method, headers: h, body: o.body !== undefined ? JSON.stringify(o.body) : undefined });
+  }
+  function ghProgressUrl() {
+    var cfg = state.settings;
+    return '/repos/' + cfg.ghRepo + '/contents/' + GH_PROGRESS_PATH + '?ref=' + encodeURIComponent(cfg.ghBranch || 'main');
+  }
+  function mergeStatus(a, b) {
+    var order = { new: 0, learn: 1, know: 2 }, out = {}, keys = {};
+    Object.keys(a).forEach(function (k) { keys[k] = 1; });
+    Object.keys(b).forEach(function (k) { keys[k] = 1; });
+    Object.keys(keys).forEach(function (k) {
+      var va = a[k] || 'new', vb = b[k] || 'new';
+      out[k] = (order[va] || 0) >= (order[vb] || 0) ? va : vb;
+    });
+    return out;
+  }
+  function mergeStats(a, b) {
+    var out = {};
+    ['played', 'correct', 'streaks', 'bestStreak', 'batches', 'stories'].forEach(function (k) { out[k] = Math.max(a[k] || 0, b[k] || 0); });
+    return out;
+  }
+  function ghWrite(sha) {
+    var cfg = state.settings;
+    var body = { message: 'Sync postepu [NihongoN2]', content: b64e(JSON.stringify(progressPayload())), branch: cfg.ghBranch || 'main' };
+    if (sha) body.sha = sha;
+    return ghApi('/repos/' + cfg.ghRepo + '/contents/' + GH_PROGRESS_PATH, { method: 'PUT', body: body }).then(function (r) {
+      if (r.status !== 200 && r.status !== 201) {
+        return r.json().catch(function () { return null; }).then(function (j) {
+          throw new Error('Zapis w repo nieudany (HTTP ' + r.status + '): ' + ((j && j.message) || ''));
+        });
+      }
+      return true;
+    });
+  }
+  function mergeAndWrite(remote, sha) {
+    var local = progressPayload();
+    var status = mergeStatus(local.status, remote.status || {});
+    var stats = mergeStats(local.stats, remote.stats || {});
+    if (JSON.stringify(status) !== JSON.stringify(local.status) || JSON.stringify(stats) !== JSON.stringify(local.stats)) {
+      state.status = status;
+      state.stats = stats;
+      save();
+    }
+    var payload = progressPayload();
+    var same = JSON.stringify(payload.status) === JSON.stringify(remote.status || {}) && JSON.stringify(payload.stats) === JSON.stringify(remote.stats || {});
+    if (same) { syncMeta.fp = progressFp(); storeSyncMeta(); return Promise.resolve(false); }
+    return ghWrite(sha).then(function () { syncMeta.fp = progressFp(); storeSyncMeta(); return true; });
+  }
+  function syncNow(force) {
+    var cfg = state.settings;
+    if (syncing) return;
+    if (!cfg.ghOn || !cfg.ghRepo || !cfg.ghToken) { if (force) setSyncMsg('Dodaj repo (login/nazwa) i token GitHub, potem wciśnij „🔄 Synchronizuj teraz”.'); return; }
+    if (!window.fetch) return;
+    var now = Date.now();
+    if (!force && now - (syncMeta.lastAt || 0) < 15000) return;
+    syncMeta.lastAt = now;
+    syncing = true;
+    setSyncMsg('Synchronizuję…');
+    ghApi(ghProgressUrl(), { method: 'GET' }).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (j) { return { status: r.status, json: j }; });
+    }).then(function (res) {
+      if (res.status === 404) return ghWrite(null).then(function () { return true; });
+      if (res.status === 401 || res.status === 403) throw new Error('Brak dostępu (HTTP ' + res.status + ') — sprawdź token i uprawnienia do repo.');
+      if (res.status === 429) throw new Error('Limit GitHub API (HTTP 429) — odczekaj chwilę.');
+      if (res.status !== 200 || !res.json) throw new Error('GitHub API: HTTP ' + res.status);
+      var remote = null;
+      try { remote = JSON.parse(b64d(res.json.content)); } catch (e) { throw new Error('Nieprawidłowy zapis w progress/save.json na GitHubie.'); }
+      return mergeAndWrite(remote, res.json.sha);
+    }).then(function (done) {
+      setSyncMsg(done ? 'Postęp zsynchronizowany ✓' : 'Wszystko zsynchronizowane ✓');
+    }).catch(function (e) {
+      setSyncMsg('Sync: ' + ((e && e.message) || e));
+    }).then(function () { syncing = false; });
+  }
+  window.N2GAME_SYNC_CLEAR = function (cb) {
+    var cfg = state.settings;
+    if (!cfg.ghOn || !cfg.ghRepo || !cfg.ghToken || !window.fetch) { if (cb) cb(); return; }
+    ghApi(ghProgressUrl(), { method: 'GET' }).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (j) { return { status: r.status, json: j }; });
+    }).then(function (res) {
+      if (res.status !== 200 || !res.json || !res.json.sha) { if (cb) cb(); return; }
+      return ghApi('/repos/' + cfg.ghRepo + '/contents/' + GH_PROGRESS_PATH, { method: 'DELETE', body: { message: 'Wyczyszczono postep [NihongoN2]', sha: res.json.sha, branch: cfg.ghBranch || 'main' } })
+        .then(function () { if (cb) cb(); }).catch(function () { if (cb) cb(); });
+    }).catch(function () { if (cb) cb(); });
+  };
 
   function wordAt(i) { return WORDS[i]; }
   function idxOf(item) { return WORDS.indexOf(item); }
@@ -402,6 +530,47 @@
     row3.appendChild(cb);
     sett.append(row1, row3);
     sec.appendChild(sett);
+
+    // ---- synchronizacja przez GitHub ----
+    var syncCard = el('div', 'card sett');
+    syncCard.appendChild(el('h3', '', '🔄 Synchronizacja postępu (GitHub)'));
+    syncCard.appendChild(el('p', 'dim', 'Status słówek i statystyki zapisują się w pliku <code>progress/save.json</code> w Twoim repozytorium — automatycznie scalają się między urządzeniami. Token trzymany tylko w tej przeglądarce.'));
+    var rRepo = el('div', 'sett-row');
+    rRepo.appendChild(el('label', '', 'Repo (login/nazwa): '));
+    var repInp = el('input', 'dict-inp');
+    repInp.value = state.settings.ghRepo || '';
+    repInp.placeholder = 'twoj-login/jlpt-n2-game';
+    rRepo.appendChild(repInp);
+    var rDev = el('div', 'sett-row');
+    rDev.appendChild(el('label', '', 'Nazwa urządzenia: '));
+    var devInp = el('input', 'dict-inp');
+    devInp.value = state.settings.ghDevice || '';
+    devInp.placeholder = 'np. dom / praca';
+    rDev.appendChild(devInp);
+    var rTok = el('div', 'sett-row');
+    rTok.appendChild(el('label', '', 'Token GitHub: '));
+    var tokInp = el('input', 'dict-inp');
+    tokInp.type = 'password';
+    tokInp.value = state.settings.ghToken || '';
+    tokInp.placeholder = 'ghp_…';
+    rTok.appendChild(tokInp);
+    var rowBtn = el('div', 'sett-row');
+    var bSaveCfg = el('button', 'btn pri', 'Zapisz ustawienia sync');
+    var bSyncNow = el('button', 'btn', '🔥 Synchronizuj teraz');
+    rowBtn.append(bSaveCfg, bSyncNow);
+    var syncStatus = el('div', 'syncmsg', '');
+    syncStatus.id = 'syncmsg';
+    syncStatus.className = 'dim';
+    function commitGhCfg() {
+      state.settings.ghRepo = repInp.value.trim();
+      state.settings.ghDevice = devInp.value.trim();
+      state.settings.ghToken = tokInp.value.trim();
+      save();
+    }
+    bSaveCfg.onclick = function () { commitGhCfg(); setSyncMsg('Ustawienia sync zapisane.'); };
+    bSyncNow.onclick = function () { commitGhCfg(); syncNow(true); };
+    syncCard.append(rRepo, rDev, rTok, rowBtn, syncStatus);
+    sec.appendChild(syncCard);
 
     main.appendChild(sec);
   }
@@ -1167,4 +1336,5 @@
   }
   navLive();
   renderHome();
+  setTimeout(function () { syncNow(true); }, 1500);
 })();
