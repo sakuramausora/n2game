@@ -10,7 +10,7 @@
   var LS_KEY = 'n2game.v1';
   var state = {
     status: {},          // idx -> 'new' | 'learn' | 'know'
-    settings: { batchSize: 10, quizMode: 'km', sound: true, geminiKey: '', geminiModel: 'gemini-2.5-flash', ghRepo: '', ghBranch: 'main', ghToken: '', ghDevice: '', ghOn: true },
+    settings: { batchSize: 10, quizMode: 'km', sound: true, geminiKey: '', geminiModel: 'gemini-3.7-flash', ghRepo: '', ghBranch: 'main', ghToken: '', ghDevice: '', ghOn: true },
     group: [],           // current group indices
     groupKey: '',        // cache key for story
     stats: { played: 0, correct: 0, streaks: 0, bestStreak: 0, batches: 0, stories: 0 }
@@ -924,9 +924,9 @@
     kInp.value = state.settings.geminiKey || '';
     kInp.style.flex = '1';
     var mSel = el('select', '', [
-      'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro', 'gemini-2.0-flash'
+      'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'
     ].map(function (m) { return '<option>' + m + '</option>'; }).join(''));
-    mSel.value = state.settings.geminiModel || 'gemini-2.5-flash';
+    mSel.value = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'].indexOf(state.settings.geminiModel) >= 0 ? state.settings.geminiModel : 'gemini-3.7-flash';
     var bKey = el('button', 'btn pri', 'Zapisz klucz');
     bKey.onclick = function () {
       state.settings.geminiKey = kInp.value.trim();
@@ -994,7 +994,8 @@
   function genGeminiStory(out, items, genre, key) {
     if (!window.N2STORYLLM) return aiError(out, null);
     out.appendChild(el('div', 'story-note', '🤖 Generuję historyjkę ' + genreLabel(genre) + ' przez Gemini… zwykle 15–60 sekund, nie zamykaj okna.'));
-    var model = state.settings.geminiModel || 'gemini-2.5-flash';
+    var known = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+    var model = known.indexOf(state.settings.geminiModel) >= 0 ? state.settings.geminiModel : 'gemini-3.7-flash';
     var clean = items.map(function (w) { return { w: w.w, r: w.r, pl: w.pl || '', m: w.m || '' }; });
     var prompt = window.N2STORYLLM.buildPrompt(clean, genre);
     callGemini(prompt, key, model).then(function (text) {
@@ -1042,7 +1043,7 @@
   function geminiError(status, json) {
     var msg = json && json.error && json.error.message;
     if (status === 401 || status === 403) return 'Nieprawidłowy klucz Gemini (HTTP ' + status + '). Zdobądź darmowy klucz na aistudio.google.com/apikey i zapisz go powyżej.';
-    if (status === 404) return 'Model nie istnieje lub jest niedostępny dla tego klucza (HTTP 404). Zmień model w ustawieniach (np. gemini-2.5-flash).';
+    if (status === 404) return 'Model nie istnieje lub jest niedostępny dla tego klucza (HTTP 404). Użyj stabilnych modeli Gemini 3 (np. gemini-3.7-flash / gemini-3.5-flash).';
     if (status === 429) return 'Przekroczono limit darmowego klucza (HTTP 429). Odczekaj chwilę albo użyj innego klucza/modelu.';
     if (status === 400) return 'Zapytanie odrzucone (HTTP 400): ' + (msg || 'sprawdź klucz, model i grupę słówek.');
     return 'Błąd Gemini (HTTP ' + status + '): ' + (msg || 'nieznany błąd');
