@@ -117,7 +117,10 @@
       if (r.status !== 200 && r.status !== 201) {
         return r.json().catch(function () { return null; }).then(function (j) {
           var msg = (j && j.message) || '';
-          if (r.status === 403) throw new Error('Token nie ma uprawnień zapisu (HTTP 403): ' + msg + ' — token musi mieć zakres „repo” (lub fine-grained: Contents read/write).');
+          if (r.status === 403) {
+            var hint = /not accessible/i.test(msg) ? ' — token fine-grained bez dostępu do repo; użyj tokena klasycznego z zakresem „repo"' : '';
+            throw new Error('Token nie ma uprawnień zapisu (HTTP 403)' + hint + ': ' + msg);
+          }
           if (r.status === 422) throw new Error('Nie da się zapisać do gałęzi ' + (branch || 'main') + ' (HTTP 422): ' + msg);
           throw new Error('Zapis w repo nieudany (HTTP ' + r.status + '): ' + msg);
         });
@@ -144,9 +147,12 @@
     var cfg = state.settings;
     if (cfg.ghBranch && cfg.ghBranch !== 'main') return Promise.resolve(cfg.ghBranch);
     return ghApi('/repos/' + cfg.ghRepo, { method: 'GET' }).then(function (r) {
-      return r.json().catch(function () { return null; }).then(function (j) {
-        if (r.status === 401 || r.status === 403) throw new Error('Brak dostępu do repo (HTTP ' + r.status + ') — sprawdź token (zakres repo).');
-        if (r.status === 404) throw new Error('Repo nie istnieje: ' + cfg.ghRepo + ' — sprawdź pisownię „login/repo”.');
+return r.json().catch(function () { return null; }).then(function (j) {
+        if (r.status === 401 || r.status === 403) {
+          var hint = (j && j.message && /not accessible/i.test(j.message)) ? ' — możliwe, że używasz tokena fine-grained; wygeneruj klasyczny z zakresem „repo"' : '';
+          throw new Error('Brak dostępu do repo (HTTP ' + r.status + ')' + hint + ': ' + ((j && j.message) || ''));
+        }
+        if (r.status === 404) throw new Error('Repo nie istnieje: ' + cfg.ghRepo + ' — sprawdź pisownię „login/repo".');
         if (r.status !== 200 || !j) throw new Error('GitHub API: HTTP ' + r.status);
         var b = (j.default_branch || 'main');
         if (!cfg.ghBranch || cfg.ghBranch === 'main') { cfg.ghBranch = b; }
@@ -169,7 +175,10 @@
         return r.json().catch(function () { return null; }).then(function (j) { return { status: r.status, json: j }; });
       }).then(function (res) {
         if (res.status === 404) return ghWrite(null, branch).then(function () { return true; });
-        if (res.status === 401 || res.status === 403) throw new Error('Brak dostępu do pliku (HTTP ' + res.status + ') — sprawdź token i uprawnienia do repo.');
+        if (res.status === 401 || res.status === 403) {
+        var hint = (res.json && res.json.message && /not accessible/i.test(res.json.message)) ? ' (token fine-grained bez dostępu do tego repo — użyj tokena klasycznego z zakresem „repo")' : '';
+        throw new Error('Brak dostępu do pliku (HTTP ' + res.status + ')' + hint + ' — sprawdź token i uprawnienia do repo.');
+      }
         if (res.status === 429) throw new Error('Limit GitHub API (HTTP 429) — odczekaj chwilę.');
         if (res.status !== 200 || !res.json) throw new Error('GitHub API: HTTP ' + res.status);
         var remote = null;
@@ -556,7 +565,8 @@
     // ---- synchronizacja przez GitHub ----
     var syncCard = el('div', 'card sett');
     syncCard.appendChild(el('h3', '', '🔄 Synchronizacja postępu (GitHub)'));
-    syncCard.appendChild(el('p', 'dim', 'Status słówek i statystyki zapisują się w pliku <code>progress/save.json</code> w Twoim repozytorium — automatycznie scalają się między urządzeniami. Token trzymany tylko w tej przeglądarce.'));
+    syncCard.appendChild(el('p', 'dim', 'Status słówek i statystyki zapisują się w pliku <code>progress/save.json</code> w Twoim repozytorium — automatycznie scalają się między urządzeniami. Token trzymany tylko w tej przeglądarce.<br><br>' +
+      'Użyj klasycznego tokena: <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">github.com/settings/tokens</a> → „Generate new token (classic)" → zaznacz <b>repo</b> → wygeneruj i wklej poniżej. Token fine-grained nie zadziała bez wybrania uprawnienia Contents read/write i dostępu do tego repo.'));
     var rRepo = el('div', 'sett-row');
     rRepo.appendChild(el('label', '', 'Repo (login/nazwa): '));
     var repInp = el('input', 'dict-inp');
@@ -570,7 +580,7 @@
     devInp.placeholder = 'np. dom / praca';
     rDev.appendChild(devInp);
     var rTok = el('div', 'sett-row');
-    rTok.appendChild(el('label', '', 'Token GitHub: '));
+    rTok.appendChild(el('label', '', 'Token GitHub (classic): '));
     var tokInp = el('input', 'dict-inp');
     tokInp.type = 'password';
     tokInp.value = state.settings.ghToken || '';
@@ -1024,10 +1034,12 @@
     if (!window.N2STORYLLM) return aiError(out, null);
     out.appendChild(el('div', 'story-note', '🤖 Generuję historyjkę ' + genreLabel(genre) + ' przez Gemini… zwykle 15–60 sekund, nie zamykaj okna.'));
     var known = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
-    var model = known.indexOf(state.settings.geminiModel) >= 0 ? state.settings.geminiModel : 'gemini-3.7-flash';
+    var cfg = state.settings.geminiModel;
+    var models = known.indexOf(cfg) >= 0 ? [cfg].concat(known) : known;
+    models = models.filter(function (m, i) { return models.indexOf(m) === i; });
     var clean = items.map(function (w) { return { w: w.w, r: w.r, pl: w.pl || '', m: w.m || '' }; });
     var prompt = window.N2STORYLLM.buildPrompt(clean, genre);
-    callGemini(prompt, key, model).then(function (text) {
+    callGemini(prompt, key, models).then(function (text) {
       var story = window.N2STORYLLM.parseStory(text, clean);
       if (!story) throw new Error('Model nie zwrócił poprawnego JSON-a — spróbuj jeszcze raz lub zmień model.');
       state.stats.stories++;
@@ -1038,34 +1050,55 @@
     });
   }
 
-  function callGemini(prompt, apiKey, model) {
+  function callGemini(prompt, apiKey, models) {
+    var base = (models && models.length ? models : ['gemini-3.7-flash']);
     return new Promise(function (resolve, reject) {
       var ctl = new AbortController();
       var timer = setTimeout(function () { ctl.abort(); }, 180000);
-      fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.9, responseMimeType: 'application/json' }
-        }),
-        signal: ctl.signal
-      }).then(function (r) {
-        return r.json().catch(function () { return null; }).then(function (j) {
-          if (!r.ok) throw new Error(geminiError(r.status, j));
-          var parts = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
-          var text = '';
-          if (parts) parts.forEach(function (p) { if (p && p.text) text += p.text; });
-          if (!text) throw new Error('Pusta odpowiedź modelu (candidates).');
-          resolve(text);
-        });
-      }).catch(function (e) {
-        if (e && e.name === 'AbortError') {
-          reject(new Error('Generowanie trwało zbyt długo (> 3 min). Spróbuj mniejszą grupą lub innym modelem.'));
-        } else {
-          reject(e instanceof Error ? e : new Error(String(e)));
+      var done = false;
+      function finish(err, text) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (err) reject(err); else resolve(text);
+      }
+      function attempt(list, tries) {
+        if (done) return;
+        if (!list.length) {
+          if (tries > 0) { setTimeout(function () { attempt(base, tries - 1); }, 3000); return; }
+          finish(new Error('Wszystkie modele Gemini są chwilowo przeciążone (HTTP 503). Spikes są zwykle przejściowe — poczekaj chwilę i spróbuj ponownie.'));
+          return;
         }
-      }).then(function () { clearTimeout(timer); });
+        var model = list[0];
+        fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.9, responseMimeType: 'application/json' }
+          }),
+          signal: ctl.signal
+        }).then(function (r) {
+          return r.json().catch(function () { return null; }).then(function (j) {
+            if (!r.ok) throw { _status: r.status, _json: j };
+            var parts = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+            var text = '';
+            if (parts) parts.forEach(function (p) { if (p && p.text) text += p.text; });
+            if (!text) throw new Error('Pusta odpowiedź modelu (candidates).');
+            finish(null, text);
+          });
+        }).catch(function (e) {
+          if (done) return;
+          if (e && (e._status === 503 || e._status === 404)) { setTimeout(function () { attempt(list.slice(1), tries); }, 2200); return; }
+          if (e && e._status) { finish(new Error(geminiError(e._status, e._json))); return; }
+          if (e && e.name === 'AbortError') {
+            finish(new Error('Generowanie trwało zbyt długo (> 3 min). Spróbuj mniejszą grupą lub innym modelem.'));
+          } else {
+            finish(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      }
+      attempt(base, 2);
     });
   }
 
@@ -1074,6 +1107,7 @@
     if (status === 401 || status === 403) return 'Nieprawidłowy klucz Gemini (HTTP ' + status + '). Zdobądź darmowy klucz na aistudio.google.com/apikey i zapisz go powyżej.';
     if (status === 404) return 'Model nie istnieje lub jest niedostępny dla tego klucza (HTTP 404). Użyj stabilnych modeli Gemini 3 (np. gemini-3.7-flash / gemini-3.5-flash).';
     if (status === 429) return 'Przekroczono limit darmowego klucza (HTTP 429). Odczekaj chwilę albo użyj innego klucza/modelu.';
+    if (status === 503) return 'Model chwilowo przeciążony (HTTP 503). Spróbuj ponownie za chwilę — aplikacja sama przeskakuje na inny model Gemini 3.';
     if (status === 400) return 'Zapytanie odrzucone (HTTP 400): ' + (msg || 'sprawdź klucz, model i grupę słówek.');
     return 'Błąd Gemini (HTTP ' + status + '): ' + (msg || 'nieznany błąd');
   }
