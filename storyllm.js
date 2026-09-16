@@ -175,7 +175,8 @@
     };
   }
 
-  var VN_BG = { night: 0, rain: 1, station: 2, train: 3, hospital: 4, twilight: 5, river: 6 };
+  var VN_BG = { night: 0, rain: 1, station: 2, train: 3, hospital: 4, twilight: 5, river: 6,
+  forest: 7, mountain: 8, sea: 9, cafe: 10, classroom: 11, rooftop: 12, shrine: 13, snow: 14, city: 15, space: 16 };
 
   // Build the user prompt asking for a full visual-novel script (JSON).
   function buildVNPrompt(items, genre) {
@@ -189,7 +190,7 @@
     var surnames = sample(SURNAMES, 18);
     var maleNames = sample(MALE_NAMES, 12);
     var femaleNames = sample(FEMALE_NAMES, 12);
-    var bgList = ['night', 'rain', 'station', 'train', 'hospital', 'twilight', 'river'];
+    var bgList = Object.keys(VN_BG);
     var t = [
       'Jesteś scenarzystą powieści wizualnych po japońsku. Napisz pełną, dłuższą opowieść (aspekty gatunku bardzo ważne!), która wykorzysta DOKŁADNIE RAZ każde słówko z listy poniżej.',
       '',
@@ -199,8 +200,8 @@
       'Konwencja powieści wizualnej (VN):',
       '1. 3–5 ROZDZIAŁÓW (pole "chapters"). Każdy rozdział ma: "titleJA" (tytuł po japońsku z furiganą w "titleKana"), "titlePL", "bg" (miejsce akcji jako jedna z wartości: ' + bgList.join(', ') + '), "who" (głośny narrator/postacie prowadząca cały rozdział) oraz 4–8 zdań w "paras".',
       '2. Każde zdanie w "paras" to obiekt: { "ja": "…zdanie po japońsku…", "pl": "…naturalne polskie tłumaczenie…" }. Możesz dodać żywą rozmowę między bohaterami.',
-      '3. POŁOWA_KROPLA: w 2. lub 3. rozdziale umieść wybór (pole "choice" na poziomie całego skryptu, "afterChapter": numer rozdziału, po którym wybór się pojawia). "choice.paras" to 1–2 zdania tuż przed pytaniem, a "options" to DOKŁADNIE dwie opcje: { "label": "…krótkie zdanie po japońsku…", "note": "…krótki polski komentarz…" }. Wybór prowadzi do dwóch różnych zakończeń.',
-      '4. W OSTATNIM rozdziale umieść dwa zakończenia (pole "endings", DOKŁADNIE 2 elementy): { "title": "…tytuł po japońsku…", "sub": "…podtytuł np. Epilog…", "body": "…opis zakończenia po polsku, 2–4 zdania…" }.',
+      '3. POŁOWA_KROPLA: w 2. lub 3. rozdziale umieść wybór (pole "choice" na poziomie całego skryptu, "afterChapter": numer rozdziału, po którym wybór się pojawia). "choice.paras" to 1–2 zdania tuż przed pytaniem, a "options" to DOKŁADNIE dwie opcje: { "label": "…krótkie zdanie po japońsku…", "note": "…zdanie po japońsku, reakcja po dokonaniu wyboru…" }. Wybór prowadzi do dwóch RÓŻNYCH zakończeń.',
+      '4. ZAKOŃCZENIA (pole "endings", DOKŁADNIE 2 elementy) MUSZĄ być wyraźnie różne i kontrastować ze sobą — dwa odrębne losy bohatera, nie warianty tego samego. Obowiązkowo: endings[0] dla opcji 1 = DOBRE/zrokowane (szczęśliwe, ciepłe zakończenie); endings[1] dla opcji 2 = ZŁE ALBO MIESZANE (tragiczne, bolesne lub gorzko-słodkie). Element: { "title": "…tytuł po japońsku…", "sub": "…podtytuł po japońsku np. エピローグ…", "body": "…opis zakończenia PO JAPOŃSKU, 2–4 zdania…" }. Tytuły i treści obu zakończeń muszą się zasadniczo różnić.',
       '5. Jeśli ostatnia scena powinna się różnić w zależności od wyboru, danemu zdaniu w ostatnim rozdziale nadaj "variants": [ "…wersja przy opcji 1…", "…wersja przy opcji 2…" ] (zamiast "ja"; obie wersje po japońsku).',
       '6. BOHATEROWIE: każda ważniejsza postać MUSI mieć imię i nazwisko (przy neutralnym tle — Japonia — losowo łącz nazwiska i imiona z pul; w obrębie jednej historii nazwiska nie mogą się powtarzać; jeśli akcja toczy się gdzie indziej, dobierz imiona stosowne do świata).',
       '6a. PULA NAZWISK: ' + surnames + '. Imiona MĘSKIE: ' + maleNames + '. Imiona ŻEŃSKIE: ' + femaleNames + '.',
@@ -224,7 +225,7 @@
       '  "choice": { "afterChapter": 2,',
       '    "paras": [ { "ja": "…", "pl": "…" } ],',
       '    "options": [ { "label": "…", "note": "…" }, { "label": "…", "note": "…" } ] },',
-      '  "endings": [ { "title": "…", "sub": "…", "body": "…" }, { "title": "…", "sub": "…", "body": "…" } ]',
+      '  "endings": [ { "title": "…tytuł JA dobrego zakończenia…", "sub": "…", "body": "…PO JAPOŃSKU…" }, { "title": "…tytuł JA złego/mieszanego…", "sub": "…", "body": "…PO JAPOŃSKU…" } ]',
       '}',
       '',
       'PAMIĘTAJ: gatunek = ' + label + ', znaczniki ★…★ tylko dla słówek, wybór w środku, dwa różne zakończenia, 3–5 rozdziałów.',
