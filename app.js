@@ -473,43 +473,39 @@ return r.json().catch(function () { return null; }).then(function (j) {
     acts.appendChild(card('📖', 'Historyjka', 'Wygeneruj opowieść, która używa wszystkich słówek z grupy.', function () { show('story'); }));
     acts.appendChild(card('🔎', 'Słownik', 'Przeszukaj całą bazę N2 i zaglądaj do szczegółów kanji.', function () { show('dict'); }));
     acts.appendChild(card('🈯', 'Kanji', 'Przeglądaj znaki poziomu N2 z odczytami i znaczeniami.', function () { show('kanji'); }));
-    acts.appendChild(card('↞', 'Powieści wizualne', '4 gotowe powieści (horror / dramat) w japońskim — gameplay w nowej karcie.', function () { show('vns'); }));
     sec.appendChild(acts);
-
-    // ---- VN gry ----
-    var vnList = [
-      { file: 'saishu-tenji.html', title: '最終展示', sub: 'najnowsza · horror · 3 zakończenia', color: 'var(--accent)' },
-      { file: 'vn.html', title: '蛍の最終列車', sub: 'horror · 9 rozdziałów', color: 'var(--accent)' },
-      { file: 'kitsunebi.html', title: '狐火の宮', sub: 'horror · 9 rozdziałów', color: 'var(--accent2)' },
-      { file: 'kagami-no-yado.html', title: '鏡の宿', sub: 'dramat · lustrzany pokój', color: 'var(--accent2)' }
-    ];
-    var vnsec = el('div', 'card');
-    vnsec.appendChild(el('h3', '', '📚 Powieści wizualne — graj z dowolnego urządzenia'));
-    vnsec.appendChild(el('p', 'dim', 'Self-contained HTML — wystarczy otworzyć plik. Each title opens in a new tab. Postęp zapisuje się osobno w pamięci przeglądarki na tym urządzeniu.'));
-    var vngrid = el('div', 'groups-grid');
-    vnList.forEach(function (v) {
-      var b = el('a', '', '<b style="color:' + v.color + '">' + E.esc(v.title) + '</b><span>' + E.esc(v.sub) + '</span>');
-      b.href = v.file;
-      b.target = '_blank';
-      b.rel = 'noopener';
-      b.className = 'group-chip';
-      b.style.textDecoration = 'none';
-      vngrid.appendChild(b);
-    });
-    vnsec.appendChild(vngrid);
-    sec.appendChild(vnsec);
 
     // ---- grupy słówek (ponumerowane) ----
     var gsec = el('div', 'card groups-card');
-    gsec.appendChild(el('h3', '', '📚 Grupy słówek (' + batchSize() + ' słów na grupę)'));
-    gsec.appendChild(el('p', 'dim', 'Kliknij grupę, by uczyć się jej kartami — ponumerowane grupy możesz powtarzać w dowolnej kolejności.'));
+    // nagłówek z przyciskiem zwijania/rozwijania
+    var ghdr = el('div', 'fold-head');
+    ghdr.appendChild(el('h3', '', '📚 Grupy słówek (' + batchSize() + ' słów na grupę)'));
+    var gfold = el('button', 'fold-btn', '');
+    var gbodyEl = el('div', 'fold-body');
+    function paintFold() {
+      var open = state.settings.groupsOpen !== false;
+      gbodyEl.classList.toggle('hidden', !open);
+      gfold.innerHTML = '<span class="fold-ico"' + (open ? '' : ' style="transform:rotate(-90deg)"') + '>▼</span>' +
+        (open ? 'Zwiń' : 'Rozwiń') + ' <span style="opacity:.7">(' + groupCount() + ' grup)</span>';
+      gfold.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    gfold.onclick = function () {
+      state.settings.groupsOpen = state.settings.groupsOpen === false;
+      paintFold();
+      save();
+    };
+    ghdr.appendChild(gfold);
+    gsec.appendChild(ghdr);
+    gsec.appendChild(gbodyEl);
+    paintFold();
+    gbodyEl.appendChild(el('p', 'dim', 'Kliknij grupę, by uczyć się jej kartami — ponumerowane grupy możesz powtarzać w dowolnej kolejności.'));
     var gact = el('div', 'gbtns');
     var gr = el('button', 'btn pri', '🎲 Nowa grupa (losowa)');
     gr.onclick = function () { makeGroup('random'); show('learn'); };
     var gp = el('button', 'btn', '🔁 Powtórka (uczę się)');
     gp.onclick = function () { makeGroup('weak'); show('learn'); };
     gact.append(gr, gp);
-    gsec.appendChild(gact);
+    gbodyEl.appendChild(gact);
 
     var ggrid = el('div', 'groups-grid');
     for (var g = 0; g < groupCount(); g++) {
@@ -525,9 +521,9 @@ return r.json().catch(function () { return null; }).then(function (j) {
       b.onclick = (function (gg) { return function () { openGroup(gg); }; })(g);
       ggrid.appendChild(b);
     }
-    gsec.appendChild(ggrid);
+    gbodyEl.appendChild(ggrid);
 
-    // ---- grupy do powtórki ze słówek „uczę się” ----
+    // ---- grupy do powtórki ze słówek „uczę się” (zawsze widoczne, poza zwijanym blokiem) ----
     var rev = reviewGroups();
     gsec.appendChild(el('h4', 'sub-h', '🔁 Powtórki ze słówek „📖 Uczę się” — grupy: ' + rev.length));
     if (!rev.length) {
@@ -985,17 +981,15 @@ return r.json().catch(function () { return null; }).then(function (j) {
     sel.onchange = function () { state.settings.storyGenre = sel.value; save(); };
     var bAI = el('button', 'btn pri', '🤖 Generuj historyjkę AI');
     var bNew2 = el('button', 'btn', '🎲 Inna grupa + AI');
-    var bVN = el('button', 'btn', '📼 Generuj VN AI');
     bAI.onclick = function () { aiStoryDraw(q('.story-out'), sel.value); };
     bNew2.onclick = function () { makeGroup('random'); aiStoryDraw(q('.story-out'), sel.value); };
-    bVN.onclick = function () { aiVNDraw(q('.story-out'), sel.value); };
-    top.append(sel, bAI, bNew2, bVN);
+    top.append(sel, bAI, bNew2);
     sec.appendChild(top);
     sec.appendChild(groupBar());
     var out = el('div', 'story-out');
     sec.appendChild(out);
     main.appendChild(sec);
-    out.appendChild(el('div', 'story-note dim', 'Wybierz rodzaj historyjki i kliknij „🤖 Generuj historyjkę AI". „📼 Generuj VN AI" tworzy pełną powieść wizualną (rozdziały, wybór, 2 zakończenia).'));
+    out.appendChild(el('div', 'story-note dim', 'Wybierz rodzaj historyjki i kliknij „🤖 Generuj historyjkę AI".'));
   }
 
   // AI story: Gemini (browser, GitHub Pages OK) gdy klucz podany; w przeciwnym razie local opencode (serve.js).
@@ -1029,44 +1023,6 @@ return r.json().catch(function () { return null; }).then(function (j) {
       }
     }).catch(function () {
       aiError(out, null);
-    });
-  }
-
-  // AI visual novel: full script (chapters, choice, 2 endings) via Gemini.
-  function aiVNDraw(out, genre) {
-    out.innerHTML = '';
-    var items = currentItems();
-    if (!items.length) return aiError(out, null);
-    if (!window.fetch || !window.N2STORYLLM) return aiError(out, null);
-    var key = state.settings.geminiKey || '';
-    if (!key) { aiError(out, { error: 'VN AI wymaga klucza Gemini — wpisz go w polu „Klucz Gemini" powyżej.' }); return; }
-    genGeminiVN(out, items, genre, key);
-  }
-
-  function genGeminiVN(out, items, genre, key) {
-    out.appendChild(el('div', 'story-note', '📼 Generuję powieść wizualną ' + genreLabel(genre) + ' przez Gemini… to trwa zwykle 1–3 minuty, nie zamykaj okna.'));
-    var known = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
-    var cfg = state.settings.geminiModel;
-    var models = known.indexOf(cfg) >= 0 ? [cfg].concat(known) : known;
-    models = models.filter(function (m, i) { return models.indexOf(m) === i; });
-    var clean = items.map(function (w) { return { w: w.w, r: w.r, pl: w.pl || '', m: w.m || '' }; });
-    var prompt = window.N2STORYLLM.buildVNPrompt(clean, genre);
-    callGemini(prompt, key, models).then(function (text) {
-      var script = window.N2STORYLLM.parseVN(text, clean);
-      if (!script) throw new Error('Model nie zwrócił poprawnego skryptu VN — spróbuj jeszcze raz lub zmień model.');
-      try { localStorage.setItem('n2.vn.ai', JSON.stringify(script)); }
-      catch (e) { throw new Error('Nie udało się zapisać powieści w localStorage.'); }
-      state.stats.stories++;
-      save();
-      var want = el('div', 'card');
-      want.appendChild(el('h3', '', '📼 ' + (script.titleJA || 'Powieść wizualna')));
-      want.appendChild(el('p', 'ex-item', '„' + (script.titlePL || '') + '" — ' + script.chapters.length + (script.chapters.length === 1 ? ' rozdział' : ' rozdziały/rozdziałów') + ', wybór, 2 zakończenia, ' + script.vocab.length + ' słówek. Gotowe do odtwarzania.'));
-      var bOpen = el('button', 'btn pri', '▶ Otwórz powieść wizualną');
-      bOpen.onclick = function () { window.open('vn-ai.html', '_blank'); };
-      want.appendChild(bOpen);
-      out.appendChild(want);
-    }).catch(function (e) {
-      aiError(out, { error: e && e.message || String(e) });
     });
   }
 
@@ -1399,32 +1355,8 @@ return r.json().catch(function () { return null; }).then(function (j) {
     document.body.appendChild(overlay);
   }
 
-  // ---------------- VN list ----------------
-  function renderVns() {
-    var sec = el('section', 'view');
-    sec.appendChild(el('h2', '', '📚 Powieści wizualne'));
-    sec.appendChild(el('p', 'dim', 'Wystarczy otworzyć plik — działa offline, na każdym urządzeniu. Postęp na danym urządzeniu zapisuje się automatycznie.'));
-    var vnList = [
-      { file: 'saishu-tenji.html', title: '最終展示', sub: '最新的 · horror · 3 zakończenia · zapis + auto + prędkość', badge: 'nowa' },
-      { file: 'vn.html', title: '蛍の最終列車', sub: 'horror · 9 rozdziałów · 26 słówek', badge: 'horror' },
-      { file: 'kitsunebi.html', title: '狐火の宮', sub: 'horror · 9 rozdziałów · світлячки', badge: 'horror' },
-      { file: 'kagami-no-yado.html', title: '鏡の宿', sub: 'dramat · lustro · dwie postacie', badge: 'dramat' }
-    ];
-    var grid = el('div', 'groups-grid');
-    vnList.forEach(function (v) {
-      var a = el('a', 'group-chip', '<b>' + E.esc(v.title) + '</b><span>' + E.esc(v.sub) + '</span><span class="grp-st">' + E.esc(v.badge) + '</span>');
-      a.href = v.file;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.style.textDecoration = 'none';
-      grid.appendChild(a);
-    });
-    sec.appendChild(grid);
-    main.appendChild(sec);
-  }
-
   // ---------------- wire tabs ----------------
-  var views = { home: renderHome, learn: renderLearn, quiz: renderQuiz, story: renderStory, dict: renderDict, kanji: renderKanji, vns: renderVns };
+  var views = { home: renderHome, learn: renderLearn, quiz: renderQuiz, story: renderStory, dict: renderDict, kanji: renderKanji };
   qa('.tab').forEach(function (b) {
     b.addEventListener('click', function () {
       currentView = b.dataset.view;
