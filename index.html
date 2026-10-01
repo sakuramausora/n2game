@@ -104,6 +104,17 @@
   .group-chip.review { background: rgba(244,185,66,.08); }
   .group-chip.cur { outline: 2px solid var(--accent2); }
   .sub-h { margin: 14px 0 4px; }
+  .fold-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .fold-head h3, .fold-head h4 { margin: 0; }
+  .fold-btn {
+    display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+    background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
+    padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .fold-btn:hover { border-color: var(--accent); }
+  .fold-btn .fold-ico { display: inline-block; transition: transform .15s ease; font-size: 11px; }
+  .fold-body { margin-top: 10px; }
+  .fold-body.hidden { display: none; }
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin: 10px 0; }
   .sett { max-width: 520px; }
