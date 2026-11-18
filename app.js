@@ -215,6 +215,10 @@ return r.json().catch(function () { return null; }).then(function (j) {
     words: WORDS, statusOf: statusOf, kanji: KM, el: el,
     esc: E.esc, meaning: E.firstMeaningEN, openWord: openWord, speak: speak
   });
+  if (window.N2CROSS) window.N2CROSS.init({
+    words: WORDS, statusOf: statusOf, kanji: KM, el: el,
+    esc: E.esc, meaning: E.firstMeaningEN, openWord: openWord, speak: speak
+  });
 
   // ---------------- micro helpers ----------------
   function el(tag, cls, html) {
@@ -473,17 +477,6 @@ return r.json().catch(function () { return null; }).then(function (j) {
     sec.appendChild(stats);
     sec.appendChild(progressBar({ know: know, learn: learn, nnew: nnew }));
 
-    var acts = el('div', 'home-actions');
-    acts.appendChild(card('📘', 'Nauka kartami', 'Przeglądaj grupę słówek: kana, znaczenie, szczegóły kanji i przykłady.', function () { show('learn'); }));
-    acts.appendChild(card('⚡', 'Quiz', 'Słówko → znaczenie, znaczenie → słówko, kana i więcej.', function () { show('quiz'); }));
-    acts.appendChild(card('🔤', 'Word search', 'Szukaj samych kanji w kratce — ze słówek, które znasz, albo tych, których się uczysz.', function () { show('wordsearch'); }));
-    acts.appendChild(card('📖', 'Historyjka', 'Wygeneruj opowieść, która używa wszystkich słówek z grupy.', function () { show('story'); }));
-    acts.appendChild(card('🎬', 'Powieść wizualna (BL)', 'Gotowa historia o dwóch studentach, napisana ze słówek, których teraz się uczysz.', function () { location.href = 'vn-bl.html'; }));
-    acts.appendChild(card('🕯️', '洞窟のともしび ― 深層', 'Mroczna przygoda w jaskini: whump, trudne wybory i dziesięć zakończeń. Każda decyzja boli.', function () { location.href = 'cave/cave.html'; }));
-    acts.appendChild(card('🔎', 'Słownik', 'Przeszukaj całą bazę N2 i zaglądaj do szczegółów kanji.', function () { show('dict'); }));
-    acts.appendChild(card('🈯', 'Kanji', 'Przeglądaj znaki poziomu N2 z odczytami i znaczeniami.', function () { show('kanji'); }));
-    sec.appendChild(acts);
-
     // ---- grupy słówek (ponumerowane) ----
     var gsec = el('div', 'card groups-card');
     // nagłówek z przyciskiem zwijania/rozwijania
@@ -635,15 +628,6 @@ return r.json().catch(function () { return null; }).then(function (j) {
     inner.append(k, l, n);
     bar.appendChild(inner);
     return bar;
-  }
-
-  function card(icon, title, desc, fn) {
-    var c = el('button', 'home-card');
-    c.appendChild(el('div', 'hc-icon', icon));
-    c.appendChild(el('div', 'hc-title', title));
-    c.appendChild(el('div', 'hc-desc', desc));
-    c.onclick = fn;
-    return c;
   }
 
   // ---- LEARN ----
@@ -1383,7 +1367,8 @@ return r.json().catch(function () { return null; }).then(function (j) {
 
   // ---------------- wire tabs ----------------
   var views = { home: renderHome, learn: renderLearn, quiz: renderQuiz, story: renderStory, dict: renderDict, kanji: renderKanji,
-    wordsearch: function () { if (window.N2WS) window.N2WS.render(); } };
+    wordsearch: function () { if (window.N2WS) window.N2WS.render(); },
+    crossword: function () { if (window.N2CROSS) window.N2CROSS.render(); } };
   qa('.tab').forEach(function (b) {
     b.addEventListener('click', function () {
       currentView = b.dataset.view;

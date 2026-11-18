@@ -10,13 +10,20 @@
   var DIRS = [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   var MAX_WORDS = 12;
   var MODE_KEY = 'n2ws.mode.v1';
+  var BAG_KEY = 'n2ws.bag.v1';
   var FALLBACK_KANJI = ['一', '二', '三', '人', '日', '本', '語', '学', '生', '年', '時', '間', '力', '心', '手', '大'];
 
   var api = null;
   var view = {
     mode: 'learn',
     board: null,
+    dict: {},
     found: {},
+    category: {},
+    catFound: 0,
+    listEl: null,
+    listCountEl: null,
+    listEmptyEl: null,
     selected: [],
     dragging: false,
     cellEls: [],
@@ -34,6 +41,7 @@
     if (typeof window.addEventListener === 'function') {
       window.addEventListener('pointerup', function () { view.dragging = false; });
     }
+    view.dict = fullDictionary();
     injectCss();
   }
 
@@ -56,6 +64,26 @@
     return out;
   }
 
+  // Pełny słownik: słowa N2 + JMdict. Można znaleźć dowolne istniejące słowo,
+  // nie tylko 12 ukrytych z kategorii. Słownik budujemy raz przy starcie.
+  function fullDictionary() {
+    var dict = {};
+    if (!api) return dict;
+    api.words.forEach(function (item) {
+      if (!KANJI_WORD.test(item.w)) return;
+      if (!dict[item.w]) dict[item.w] = item;
+    });
+    var extra = window.N2_JMDICT && window.N2_JMDICT.words;
+    if (extra) {
+      Object.keys(extra).forEach(function (w) {
+        if (!KANJI_WORD.test(w) || dict[w]) return;
+        var e = extra[w] || {};
+        dict[w] = { w: w, r: e.r || '', m: e.m || 'słowo', p: 'N', t: 'general', x: [] };
+      });
+    }
+    return dict;
+  }
+
   function shuffle(a) {
     var arr = a.slice();
     for (var i = arr.length - 1; i > 0; i--) {
@@ -63,6 +91,34 @@
       var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
     }
     return arr;
+  }
+
+  // Pełna rotacja słów: dopóki worek się nie wyczerpie, żadne słowo nie wróci.
+  function loadBag(mode, all) {
+    var words = all.map(function (e) { return e.word; });
+    var known = {};
+    words.forEach(function (w) { known[w] = 1; });
+    var stored = null;
+    try { stored = JSON.parse(localStorage.getItem(BAG_KEY) || '{}'); } catch (e) {}
+    var entry = stored && stored[mode] ? stored[mode] : null;
+    var hadBag = !!(entry && Array.isArray(entry.list));
+    // nie dodajemy brakujących słów z powrotem — to właśnie one zostały już użyte
+    var list = hadBag ? entry.list.filter(function (w) { return known[w]; }) : shuffle(words);
+    var last = entry && Array.isArray(entry.last) ? entry.last : [];
+
+    if (list.length < MAX_WORDS) {
+      list = shuffle(words.filter(function (w) { return last.indexOf(w) < 0; }));
+      if (list.length < MAX_WORDS) list = shuffle(words);
+    }
+    return { list: list, last: last };
+  }
+  function saveBag(mode, bag, used) {
+    try {
+      var o = JSON.parse(localStorage.getItem(BAG_KEY) || '{}');
+      if (!o || typeof o !== 'object') o = {};
+      o[mode] = { list: bag.list.filter(function (w) { return used.indexOf(w) < 0; }), last: used };
+      localStorage.setItem(BAG_KEY, JSON.stringify(o));
+    } catch (e) {}
   }
 
   function key(r, c) { return r + ',' + c; }
@@ -160,10 +216,14 @@
   }
 
   function generate(mode) {
-    var chosen = shuffle(eligible(mode));
+    // bez sortowania wg długości + pełna rotacja puli
+    var all = eligible(mode);
+    if (!all.length) return null;
+    var bag = loadBag(mode, all);
+    var byWord = {};
+    all.forEach(function (e) { byWord[e.word] = e; });
+    var chosen = bag.list.slice(0, MAX_WORDS).map(function (w) { return byWord[w]; }).filter(Boolean);
     if (!chosen.length) return null;
-    chosen.sort(function (a, b) { return b.word.length - a.word.length; });
-    chosen = chosen.slice(0, MAX_WORDS);
 
     var longest = chosen.reduce(function (m, e) { return Math.max(m, e.word.length); }, 2);
     var total = chosen.reduce(function (n, e) { return n + e.word.length; }, 0);
@@ -196,6 +256,7 @@
     });
 
     if (!placed.length) return null;
+    saveBag(mode, bag, placed.map(function (e) { return e.word; }));
     fillGrid(grid, size, placed);
     return { mode: mode, size: size, grid: grid, placed: placed };
   }
@@ -224,43 +285,75 @@
     }
   }
 
+  // klasyczna zasada: słowo musi leżeć w jednej linii (poziomo, pionowo, po przekątnej)
+  function isStraight(cells) {
+    if (cells.length < 2) return false;
+    var dr = cells[1][0] - cells[0][0], dc = cells[1][1] - cells[0][1];
+    if (Math.max(Math.abs(dr), Math.abs(dc)) !== 1) return false;
+    for (var i = 1; i < cells.length; i++) {
+      if (cells[i][0] - cells[i - 1][0] !== dr || cells[i][1] - cells[i - 1][1] !== dc) return false;
+    }
+    return true;
+  }
+
   function checkSelection() {
     var s = view.selected.map(function (rc) {
       return view.board.grid[rc[0] * view.board.size + rc[1]];
     }).join('');
     view.active = s;
     paint();
-    if (s.length < 2) return;
+    if (s.length < 2 || !isStraight(view.selected)) return;
 
     var rev = s.split('').reverse().join('');
-    for (var i = 0; i < view.board.placed.length; i++) {
-      var p = view.board.placed[i];
-      if (view.found[p.word]) continue;
-      if (p.word === s || p.word === rev) { markFound(p); return; }
-    }
+    var word = view.dict[s] ? s : (view.dict[rev] ? rev : null);
+    if (!word || view.found[word]) return;
+    var cells = view.dict[s] ? view.selected.slice() : view.selected.slice().reverse();
+    markFound(word, view.dict[word], cells);
   }
 
-  function markFound(p) {
-    view.found[p.word] = true;
-    p.cells.forEach(function (rc) {
+  function updateProgress() {
+    var n = Object.keys(view.found).length, total = view.board.placed.length;
+    if (view.progressEl) {
+      view.progressEl.textContent = 'Znalezione: ' + n + ' · z kategorii: ' + view.catFound + '/' + total;
+    }
+    if (view.listCountEl) view.listCountEl.textContent = '(' + n + ')';
+  }
+
+  function addFoundRow(word, item) {
+    if (!view.listEl) return;
+    if (view.listEmptyEl) {
+      view.listEmptyEl.parentNode.removeChild(view.listEmptyEl);
+      view.listEmptyEl = null;
+    }
+    var row = api.el('button', 'ws-row');
+    row.appendChild(api.el('span', 'ws-row-word', api.esc(word)));
+    row.setAttribute('type', 'button');
+    row.onclick = function () { api.openWord(item); };
+    view.rows[word] = row;
+    view.listEl.appendChild(row);
+    view.listEl.scrollTop = view.listEl.scrollHeight;
+  }
+
+  function markFound(word, item, cells) {
+    view.found[word] = true;
+    var hit = function (rc) {
       var el = view.cellEls[rc[0] * view.board.size + rc[1]];
       if (el) el.classList.add('hit');
-    });
-    var row = view.rows[p.word];
-    if (row) {
-      row.classList.add('found');
-      var w = row.querySelector('.ws-row-word');
-      if (w) w.innerHTML = '<span class="ws-check">✓</span>' + api.esc(p.word);
+    };
+    cells.forEach(hit);
+    if (view.category[word]) {
+      view.category[word].cells.forEach(hit);
+      view.catFound++;
     }
-    var n = Object.keys(view.found).length, total = view.board.placed.length;
-    if (view.progressEl) view.progressEl.textContent = 'Znalezione: ' + n + ' / ' + total;
-    say('✓ ' + p.word + ' — ' + api.meaning(p.item), 'good');
-    if (api.speak) api.speak(p.word);
+    addFoundRow(word, item);
+    updateProgress();
+    say('✓ ' + word + ' — ' + api.meaning(item), 'good');
+    if (api.speak) api.speak(word);
     view.selected = [];
     view.active = '';
     paint();
-    if (n === total && view.doneEl) {
-      view.doneEl.textContent = '🎉 Wszystkie słowa znalezione! Kliknij „Nowa plansza” po więcej.';
+    if (view.catFound === view.board.placed.length && view.doneEl) {
+      view.doneEl.textContent = '🎉 Wszystkie słowa z kategorii znalezione! Kliknij „Nowa plansza” po więcej.';
       view.doneEl.classList.add('on');
     }
   }
@@ -306,7 +399,7 @@
 
     var head = api.el('div', 'ws-head');
     head.appendChild(api.el('h2', '', '🔤 Word search — kanji N2'));
-    head.appendChild(api.el('p', 'dim', 'Szukaj słówek w kratce. Klikaj sąsiadujące pola (także po przekątnej) albo przeciągnij palcem po słowie.'));
+    head.appendChild(api.el('p', 'dim', 'Szukaj dowolnych słów z bazy N2 — nie tylko tych ukrytych. W kratce jest dużo słów z wybranej kategorii. Wybieraj pola wzdłuż jednej linii (poziomo, pionowo lub po przekątnej).'));
     sec.appendChild(head);
 
     var counts = { know: eligible('know').length, learn: eligible('learn').length };
@@ -337,9 +430,15 @@
 
     view.board = generate(view.mode);
     view.found = {};
+    view.category = {};
+    view.catFound = 0;
+    if (view.board) view.board.placed.forEach(function (p) { view.category[p.word] = p; });
     view.selected = [];
     view.active = '';
     view.rows = {};
+    view.listEl = null;
+    view.listCountEl = null;
+    view.listEmptyEl = null;
     view.cellEls = [];
     view.msgEl = null;
     if (view.toastTimer) { clearTimeout(view.toastTimer); view.toastTimer = null; }
@@ -375,23 +474,19 @@
     view.activeEl = api.el('div', 'ws-msg ws-active', '');
     boardCard.appendChild(view.msgEl);
     boardCard.appendChild(view.activeEl);
-    boardCard.appendChild(api.el('p', 'dim', 'Kliknięcie pola nie sąsiadującego z poprzednim zaczyna nowe słowo. Znalezione słowa kliknij po prawej, by zobaczyć szczegóły.'));
+    boardCard.appendChild(api.el('p', 'dim', 'Kliknięcie pola nie sąsiadującego z poprzednim zaczyna nowe słowo. Znalezione słowa pojawiają się po prawej — kliknij je, by zobaczyć szczegóły.'));
     layout.appendChild(boardCard);
 
     var listCard = api.el('div', 'card ws-list-card');
-    listCard.appendChild(api.el('h3', '', 'Słowa do znalezienia (' + view.board.placed.length + ')'));
-    var list = api.el('div', 'ws-list');
-    view.board.placed.slice().sort(function (a, b) {
-      return a.word.localeCompare(b.word, 'ja');
-    }).forEach(function (p) {
-      var row = api.el('button', 'ws-row');
-      row.appendChild(api.el('span', 'ws-row-word', api.esc(p.word)));
-      row.setAttribute('type', 'button');
-      row.onclick = function () { api.openWord(p.item); };
-      view.rows[p.word] = row;
-      list.appendChild(row);
-    });
-    listCard.appendChild(list);
+    var listHead = api.el('div', 'ws-list-head');
+    listHead.appendChild(api.el('h3', '', 'Znalezione słowa'));
+    view.listCountEl = api.el('span', 'ws-count', '(0)');
+    listHead.appendChild(view.listCountEl);
+    listCard.appendChild(listHead);
+    view.listEl = api.el('div', 'ws-list');
+    view.listEmptyEl = api.el('div', 'ws-empty', 'Lista jest pusta. Znajdź pierwsze słowo w kratce — pojawi się tutaj.');
+    view.listEl.appendChild(view.listEmptyEl);
+    listCard.appendChild(view.listEl);
     view.doneEl = api.el('div', 'ws-done', '');
     listCard.appendChild(view.doneEl);
     layout.appendChild(listCard);
@@ -420,7 +515,7 @@
     board.addEventListener('pointercancel', stop);
 
     paint();
-    view.progressEl.textContent = 'Znalezione: 0 / ' + view.board.placed.length;
+    updateProgress();
   }
 
   // ---------------- CSS (wstrzykiwany raz, żeby nie ruszać index.html) ----------------
@@ -449,6 +544,8 @@
       '.ws-msg.good{color:var(--ok);font-weight:600;}' +
       '.ws-active{font-size:12px;letter-spacing:1px;}' +
       '.ws-empty{padding:24px 12px;text-align:center;color:var(--ink-dim);}' +
+      '.ws-list-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}' +
+      '.ws-list-head h3{margin:0 0 8px;}' +
       '.ws-list{display:flex;flex-direction:column;gap:6px;max-height:540px;overflow:auto;}' +
       '.ws-row{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--panel2);' +
       'border:1px solid var(--line);border-radius:10px;padding:7px 10px;color:var(--ink);text-align:left;font:inherit;cursor:pointer;}' +
@@ -467,6 +564,11 @@
   window.N2WS = {
     init: init,
     render: render,
-    debug: { eligible: eligible, generate: generate, occurrences: occurrences }
+    debug: {
+      eligible: eligible, generate: generate, occurrences: occurrences,
+      current: function () { return view.board; },
+      dict: function () { return view.dict; },
+      lookup: function (w) { return view.dict[w] || null; }
+    }
   };
 })();
