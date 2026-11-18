@@ -210,6 +210,12 @@ return r.json().catch(function () { return null; }).then(function (j) {
 
   function statusOf(i) { return state.status[i] || 'new'; }
 
+  // word search korzysta z tego samego stanu słówek i helperów
+  if (window.N2WS) window.N2WS.init({
+    words: WORDS, statusOf: statusOf, kanji: KM, el: el,
+    esc: E.esc, meaning: E.firstMeaningEN, openWord: openWord, speak: speak
+  });
+
   // ---------------- micro helpers ----------------
   function el(tag, cls, html) {
     var n = document.createElement(tag);
@@ -470,7 +476,10 @@ return r.json().catch(function () { return null; }).then(function (j) {
     var acts = el('div', 'home-actions');
     acts.appendChild(card('📘', 'Nauka kartami', 'Przeglądaj grupę słówek: kana, znaczenie, szczegóły kanji i przykłady.', function () { show('learn'); }));
     acts.appendChild(card('⚡', 'Quiz', 'Słówko → znaczenie, znaczenie → słówko, kana i więcej.', function () { show('quiz'); }));
+    acts.appendChild(card('🔤', 'Word search', 'Szukaj samych kanji w kratce — ze słówek, które znasz, albo tych, których się uczysz.', function () { show('wordsearch'); }));
     acts.appendChild(card('📖', 'Historyjka', 'Wygeneruj opowieść, która używa wszystkich słówek z grupy.', function () { show('story'); }));
+    acts.appendChild(card('🎬', 'Powieść wizualna (BL)', 'Gotowa historia o dwóch studentach, napisana ze słówek, których teraz się uczysz.', function () { location.href = 'vn-bl.html'; }));
+    acts.appendChild(card('🕯️', '洞窟のともしび ― 深層', 'Mroczna przygoda w jaskini: whump, trudne wybory i dziesięć zakończeń. Każda decyzja boli.', function () { location.href = 'cave/cave.html'; }));
     acts.appendChild(card('🔎', 'Słownik', 'Przeszukaj całą bazę N2 i zaglądaj do szczegółów kanji.', function () { show('dict'); }));
     acts.appendChild(card('🈯', 'Kanji', 'Przeglądaj znaki poziomu N2 z odczytami i znaczeniami.', function () { show('kanji'); }));
     sec.appendChild(acts);
@@ -947,6 +956,23 @@ return r.json().catch(function () { return null; }).then(function (j) {
   function renderStory() {
     var sec = el('section', 'view');
     sec.appendChild(el('h2', '', '📖 Historyjka (AI)'));
+
+    var bl = el('div', 'card');
+    bl.appendChild(el('h3', '', '🎬 Powieść wizualna (BL) — gotowa, bez AI'));
+    bl.appendChild(el('p', 'dim', '「観測者の殻」 („Skorupa obserwatora”): dziesięć rozdziałów o dwóch studentach i jednym obserwatorium, napisane w całości ze 90 słówek oznaczonych u Ciebie jako „w nauce”. Nowe tła, dźwięk otoczenia, słowniczek po kliknięciu i dwa zakończenia.'));
+    var bBL = el('button', 'btn pri', '▶ Otwórz powieść wizualną');
+    bBL.onclick = function () { location.href = 'vn-bl.html'; };
+    bl.appendChild(bBL);
+    sec.appendChild(bl);
+
+    var cv = el('div', 'card');
+    cv.appendChild(el('h3', '', '🕯️ 洞窟のともしび ― 深層 („Światło w jaskini”)'));
+    cv.appendChild(el('p', 'dim', 'Rozbudowana gra przygodowa: dwaj studenci uwięzieni w zapadniętej jaskini. Opisy whumpu, kolejne sceny, pasek sił i zaufania oraz dziesięć zakończeń — w tym nagłe „bad endy” po jednej decyzji. Trudna, ale każde zakończenie jest osiągalne.'));
+    var bCV = el('button', 'btn pri', '▶ Otwórz grę z jaskini');
+    bCV.onclick = function () { location.href = 'cave/cave.html'; };
+    cv.appendChild(bCV);
+    sec.appendChild(cv);
+
     if (!state.group.length) makeGroup('recent');
 
     var sett = el('div', 'card');
@@ -1356,7 +1382,8 @@ return r.json().catch(function () { return null; }).then(function (j) {
   }
 
   // ---------------- wire tabs ----------------
-  var views = { home: renderHome, learn: renderLearn, quiz: renderQuiz, story: renderStory, dict: renderDict, kanji: renderKanji };
+  var views = { home: renderHome, learn: renderLearn, quiz: renderQuiz, story: renderStory, dict: renderDict, kanji: renderKanji,
+    wordsearch: function () { if (window.N2WS) window.N2WS.render(); } };
   qa('.tab').forEach(function (b) {
     b.addEventListener('click', function () {
       currentView = b.dataset.view;
