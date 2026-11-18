@@ -386,7 +386,6 @@
     }).forEach(function (p) {
       var row = api.el('button', 'ws-row');
       row.appendChild(api.el('span', 'ws-row-word', api.esc(p.word)));
-      row.appendChild(api.el('span', 'ws-row-mean', api.esc(api.meaning(p.item))));
       row.setAttribute('type', 'button');
       row.onclick = function () { api.openWord(p.item); };
       view.rows[p.word] = row;
@@ -457,7 +456,6 @@
       '.ws-row.found{border-color:rgba(67,181,129,.55);background:rgba(67,181,129,.08);}' +
       '.ws-row-word{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;font-size:18px;line-height:1.2;}' +
       '.ws-check{color:var(--ok);margin-right:6px;}' +
-      '.ws-row-mean{font-size:12px;color:var(--ink-dim);}' +
       '.ws-done{margin-top:10px;color:var(--ok);font-weight:700;text-align:center;font-size:13px;display:none;}' +
       '.ws-done.on{display:block;}';
     var s = document.createElement('style');
